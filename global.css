@@ -1,0 +1,98 @@
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css";
+
+@import "nativewind/theme";
+
+/**
+ * AuraStack design tokens.
+ * Source of truth: reference-material/colorsAndFonts.jpeg (colors),
+ * AGENTS.md (spacing / radius scales). Mirrored in ../theme/ for use
+ * outside className (StyleSheet, Reanimated, etc).
+ */
+@theme {
+  /* Brand */
+  --color-aura-purple: #7c3aed;
+  --color-aura-indigo: #6366f1;
+  --color-aura-blue: #00d1ff;
+  --color-aura-teal: #14f195;
+
+  /* Semantic */
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-info: #0ea5e9;
+  --color-error: #ef4444;
+  --color-ai-accent: #a855f7;
+
+  /* Neutrals */
+  --color-n900: #05070d;
+  --color-n800: #0b0f19;
+  --color-n700: #111827;
+  --color-n600: #1f2951;
+  --color-n300: #9ca3af;
+  --color-n100: #e5e7eb;
+
+  /* Typeface — AuraStack uses Inter (see theme/typography.ts for why this
+     diverges from the design reference's Poppins spec). Loaded as static
+     weights in app/_layout.tsx; RN has no font-weight synthesis, so each
+     weight is its own family rather than font-sans + font-weight. */
+  --font-sans: "Inter-Regular";
+  --font-inter-medium: "Inter-Medium";
+  --font-inter-semibold: "Inter-SemiBold";
+  --font-inter-bold: "Inter-Bold";
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+}
+
+/*
+ * Typography scale.
+ * Plain classes (not @theme --text-* tokens) because each variant pairs a
+ * font size with a specific Inter weight file — Tailwind's font-size and
+ * font-weight utilities are independent and font-weight alone can't select
+ * a custom RN font family. One class per variant keeps call sites to
+ * className="text-h1" instead of stacking two utilities.
+ */
+.text-h1 {
+  font-family: "Inter-Bold";
+  font-size: 32px;
+  line-height: 38px;
+}
+.text-h2 {
+  font-family: "Inter-SemiBold";
+  font-size: 24px;
+  line-height: 31px;
+}
+.text-h3 {
+  font-family: "Inter-SemiBold";
+  font-size: 20px;
+  line-height: 26px;
+}
+.text-h4 {
+  font-family: "Inter-Medium";
+  font-size: 16px;
+  line-height: 22px;
+}
+.text-body-lg {
+  font-family: "Inter-Regular";
+  font-size: 16px;
+  line-height: 26px;
+}
+.text-body-md {
+  font-family: "Inter-Regular";
+  font-size: 14px;
+  line-height: 22px;
+}
+.text-body-sm {
+  font-family: "Inter-Regular";
+  font-size: 12px;
+  line-height: 19px;
+}
+.text-caption {
+  font-family: "Inter-Regular";
+  font-size: 11px;
+  line-height: 15px;
+}

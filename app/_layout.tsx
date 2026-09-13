@@ -1,24 +1,51 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
+import "../global.css";
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { useEffect } from "react";
+import { Pressable, Text, View } from "react-native";
 
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
+import { useAppBootstrap } from "../hooks/useAppBootstrap";
+
+SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  const { status, error, retry } = useAppBootstrap();
 
-  return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
-  );
+  useEffect(() => {
+    if (status !== "loading") {
+      SplashScreen.hideAsync();
+    }
+  }, [status]);
+
+  // Render a view matching the native splash background instead of `null`.
+  // On Android, the system splash (SplashScreen API, API 31+) auto-dismisses
+  // on first frame draw regardless of `preventAutoHideAsync()`, so an empty
+  // root view here briefly exposes the black window background beneath it.
+  if (status === "loading") {
+    return <View className="flex-1 bg-n800" />;
+  }
+
+  if (status === "error") {
+    return (
+      <View className="flex-1 items-center justify-center bg-n800 px-8">
+        <Text className="text-h3 text-white text-center mb-4">
+          Something went wrong starting AuraStack
+        </Text>
+        <Text className="text-body-md text-n300 text-center mb-8">
+          {error}
+        </Text>
+        <Pressable
+          onPress={retry}
+          accessibilityRole="button"
+          accessibilityLabel="Retry startup"
+          className="bg-aura-purple px-6 py-3 rounded-lg"
+        >
+          <Text className="text-body-md text-white">Try Again</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return <Stack />;
 }
