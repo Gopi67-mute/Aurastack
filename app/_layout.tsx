@@ -5,12 +5,12 @@ import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { Pressable, Text, View } from "react-native";
 
-import { useAppBootstrap } from "../hooks/useAppBootstrap";
+import { AppDestinationProvider, useAppBootstrap } from "../hooks/useAppBootstrap";
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const { status, error, retry } = useAppBootstrap();
+  const { status, destination, error, retry } = useAppBootstrap();
 
   useEffect(() => {
     if (status !== "loading") {
@@ -47,5 +47,9 @@ export default function RootLayout() {
     );
   }
 
-  return <Stack />;
+  return (
+    <AppDestinationProvider value={destination}>
+      <Stack />
+    </AppDestinationProvider>
+  );
 }

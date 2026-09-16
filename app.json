@@ -4,7 +4,7 @@
     "slug": "AuraStack01",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/aurastack-logo.png",
     "scheme": "aurastack01",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,

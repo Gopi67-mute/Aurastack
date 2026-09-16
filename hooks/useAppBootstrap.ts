@@ -1,5 +1,5 @@
 import { useFonts } from "expo-font";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 /**
  * Splash/init state machine for the app entry flow.
@@ -12,10 +12,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export type AppBootstrapStatus = "loading" | "ready" | "error";
 
 /**
- * Where the app should route to once bootstrap completes. Nothing currently
- * consumes this to navigate — onboarding/auth/home screens don't exist yet —
- * but the value is computed here so that wiring is a routing-only change
- * later, not a state-machine change.
+ * Where the app should route to once bootstrap completes. Consumed by
+ * app/index.tsx (via useAppDestination below) to redirect once — computing
+ * it here keeps the single useAppBootstrap() call owned by app/_layout.tsx,
+ * so index.tsx doesn't re-run font loading / the min-splash-duration timer.
  */
 export type AppDestination = "onboarding" | "auth" | "home";
 
@@ -141,4 +141,19 @@ export function useAppBootstrap(): AppBootstrapState {
   }, [fontsLoaded, fontError, attempt]);
 
   return { status, destination, error, retry };
+}
+
+/**
+ * Carries the `destination` app/_layout.tsx resolves down to the routes it
+ * renders once bootstrap is "ready" — currently just app/index.tsx, which
+ * redirects on it. Wrap `<Stack />` with this in _layout so screens can read
+ * the destination without calling useAppBootstrap() (and its font loading /
+ * timers) a second time.
+ */
+const AppDestinationContext = createContext<AppDestination | null>(null);
+
+export const AppDestinationProvider = AppDestinationContext.Provider;
+
+export function useAppDestination(): AppDestination | null {
+  return useContext(AppDestinationContext);
 }
