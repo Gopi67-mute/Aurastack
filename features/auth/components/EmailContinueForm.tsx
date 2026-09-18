@@ -15,10 +15,11 @@ const emailSchema = z.object({
 type EmailFormValues = z.infer<typeof emailSchema>;
 
 type EmailContinueFormProps = {
-  onSubmitEmail: (email: string) => void;
+  onSubmitEmail: (email: string) => Promise<void>;
+  errorMessage?: string | null;
 };
 
-export function EmailContinueForm({ onSubmitEmail }: EmailContinueFormProps) {
+export function EmailContinueForm({ onSubmitEmail, errorMessage }: EmailContinueFormProps) {
   const {
     control,
     handleSubmit,
@@ -28,8 +29,8 @@ export function EmailContinueForm({ onSubmitEmail }: EmailContinueFormProps) {
     defaultValues: { email: "" },
   });
 
-  function onSubmit(values: EmailFormValues) {
-    onSubmitEmail(values.email);
+  async function onSubmit(values: EmailFormValues) {
+    await onSubmitEmail(values.email);
   }
 
   return (
@@ -77,6 +78,12 @@ export function EmailContinueForm({ onSubmitEmail }: EmailContinueFormProps) {
       >
         <Text className="text-h4 text-white">Continue with email</Text>
       </Pressable>
+
+      {errorMessage ? (
+        <Text className="mt-3 text-body-sm text-error text-center">
+          {errorMessage}
+        </Text>
+      ) : null}
     </View>
   );
 }

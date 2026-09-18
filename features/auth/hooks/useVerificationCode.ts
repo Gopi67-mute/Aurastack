@@ -3,7 +3,9 @@ import type { TextInput } from "react-native";
 
 import { VERIFICATION_CODE_LENGTH } from "../constants/copy";
 
-export function useVerificationCode(onComplete: (code: string) => void) {
+export function useVerificationCode(
+  onComplete: (code: string) => void | boolean | Promise<void | boolean>
+) {
   const [code, setCode] = useState("");
   const inputRef = useRef<TextInput>(null);
 
@@ -12,7 +14,13 @@ export function useVerificationCode(onComplete: (code: string) => void) {
       const digitsOnly = text.replace(/\D/g, "").slice(0, VERIFICATION_CODE_LENGTH);
       setCode(digitsOnly);
       if (digitsOnly.length === VERIFICATION_CODE_LENGTH) {
-        onComplete(digitsOnly);
+        // Callers signal a failed attempt by resolving `false`, which clears
+        // the input so the user can retry without manually deleting digits.
+        Promise.resolve(onComplete(digitsOnly)).then((result) => {
+          if (result === false) {
+            setCode("");
+          }
+        });
       }
     },
     [onComplete]

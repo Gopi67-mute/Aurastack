@@ -1,6 +1,42 @@
 {
   "version": 1,
   "skills": {
+    "clerk": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "skillPath": "skills/core/clerk/SKILL.md",
+      "computedHash": "31dde2e1c88bfc2af5a1c783eec6d64aaf554ed3bc71ad463b812f6b58c9de41"
+    },
+    "clerk-billing": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "skillPath": "skills/features/clerk-billing/SKILL.md",
+      "computedHash": "7e862109e64dfa69d7f4b4236ef6720047130953b4b8f46efd235b1ff170dc90"
+    },
+    "clerk-expo": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "skillPath": "skills/mobile/clerk-expo/SKILL.md",
+      "computedHash": "268e6d6ea293c440d9a2fa4fd2a97828e9cbda1c66e2cc2cd7c4379a840f21cc"
+    },
+    "clerk-orgs": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "skillPath": "skills/features/clerk-orgs/SKILL.md",
+      "computedHash": "81c1444526ac716194ebbbfdbc7fdce6d43dc181522a2a870ce7b7603d243a98"
+    },
+    "clerk-testing": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "skillPath": "skills/features/clerk-testing/SKILL.md",
+      "computedHash": "7a103e04442822f0e8e11184e11e92fea143723817dba8c5f06fd71dab86c4ad"
+    },
+    "clerk-webhooks": {
+      "source": "clerk/skills",
+      "sourceType": "github",
+      "skillPath": "skills/features/clerk-webhooks/SKILL.md",
+      "computedHash": "6acecf8a6a4a77294c87874bce189d311bce39ea28786a010d2769b922fbb8cc"
+    },
     "eas-app-stores": {
       "source": "expo/skills",
       "sourceType": "github",

@@ -5,6 +5,8 @@ import { ArrowRight, Sparkles } from "lucide-react-native";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { setOnboardingCompleted } from "../lib/onboardingStorage";
+
 const TOTAL_STEPS = 3;
 
 type Onboarding3Props = {
@@ -19,7 +21,9 @@ export default function Onboarding3({
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  function handleGetStarted() {
+  async function handleGetStarted() {
+    await setOnboardingCompleted();
+
     if (onGetStarted) {
       onGetStarted();
       return;

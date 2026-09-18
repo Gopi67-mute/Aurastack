@@ -1,5 +1,8 @@
+import { useAuth } from "@clerk/expo";
 import { useFonts } from "expo-font";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+
+import { getOnboardingCompleted } from "../lib/onboardingStorage";
 
 /**
  * Splash/init state machine for the app entry flow.
@@ -34,22 +37,6 @@ const MIN_SPLASH_DURATION_MS = 1500;
 // hung. Surface the error fallback instead of leaving the splash stuck.
 const SAFETY_TIMEOUT_MS = 6000;
 
-/**
- * Placeholder. Replace with a persisted onboarding flag (AsyncStorage /
- * SecureStore — pending approval) once the onboarding flow is built.
- */
-async function getOnboardingCompleted(): Promise<boolean> {
-  return false;
-}
-
-/**
- * Placeholder. Replace with Clerk's session check once authentication is
- * wired up.
- */
-async function getAuthSession(): Promise<{ isAuthenticated: boolean } | null> {
-  return null;
-}
-
 function resolveDestination(
   onboardingCompleted: boolean,
   isAuthenticated: boolean
@@ -66,6 +53,7 @@ export function useAppBootstrap(): AppBootstrapState {
     "Inter-SemiBold": require("../assets/fonts/Inter-SemiBold.ttf"),
     "Inter-Bold": require("../assets/fonts/Inter-Bold.ttf"),
   });
+  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth();
 
   const [status, setStatus] = useState<AppBootstrapStatus>("loading");
   const [destination, setDestination] = useState<AppDestination | null>(null);
@@ -98,19 +86,16 @@ export function useAppBootstrap(): AppBootstrapState {
         if (fontError) {
           throw fontError;
         }
-        if (!fontsLoaded) {
-          // Effect re-runs once useFonts resolves (it's in the dep array).
+        if (!fontsLoaded || !isAuthLoaded) {
+          // Effect re-runs once useFonts/Clerk resolve (both in the dep array).
           return;
         }
 
-        const [onboardingCompleted, session] = await Promise.all([
-          getOnboardingCompleted(),
-          getAuthSession(),
-        ]);
+        const onboardingCompleted = await getOnboardingCompleted();
 
         const nextDestination = resolveDestination(
           onboardingCompleted,
-          !!session?.isAuthenticated
+          !!isSignedIn
         );
 
         const elapsed = Date.now() - startedAtRef.current;
@@ -138,7 +123,7 @@ export function useAppBootstrap(): AppBootstrapState {
       cancelled = true;
       clearTimeout(safetyTimer);
     };
-  }, [fontsLoaded, fontError, attempt]);
+  }, [fontsLoaded, fontError, isAuthLoaded, isSignedIn, attempt]);
 
   return { status, destination, error, retry };
 }

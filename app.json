@@ -36,7 +36,10 @@
           "resizeMode": "contain",
           "backgroundColor": "#0B0F19"
         }
-      ]
+      ],
+      "@clerk/expo",
+      "expo-secure-store",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -19,17 +19,21 @@ type VerificationModalProps = {
   visible: boolean;
   email: string;
   onClose: () => void;
-  onVerified: (code: string) => void;
+  onVerify: (code: string) => Promise<boolean>;
+  isVerifying?: boolean;
+  errorMessage?: string | null;
 };
 
 export function VerificationModal({
   visible,
   email,
   onClose,
-  onVerified,
+  onVerify,
+  isVerifying,
+  errorMessage,
 }: VerificationModalProps) {
   const insets = useSafeAreaInsets();
-  const { code, inputRef, handleChangeText, focus, reset } = useVerificationCode(onVerified);
+  const { code, inputRef, handleChangeText, focus, reset } = useVerificationCode(onVerify);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
@@ -130,6 +134,16 @@ export function VerificationModal({
               inputRef={inputRef}
             />
           </View>
+
+          {isVerifying ? (
+            <Text className="mt-3 text-body-sm text-n300 text-center">
+              Verifying...
+            </Text>
+          ) : errorMessage ? (
+            <Text className="mt-3 text-body-sm text-error text-center">
+              {errorMessage}
+            </Text>
+          ) : null}
         </View>
       </View>
     </View>

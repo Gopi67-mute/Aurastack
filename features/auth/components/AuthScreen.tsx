@@ -1,3 +1,4 @@
+import { useSSO } from "@clerk/expo/experimental";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useState } from "react";
@@ -14,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { images } from "../../../constants/images";
 import { AUTH_COPY } from "../constants/copy";
+import { useEmailAuth } from "../hooks/useEmailAuth";
 import type { AuthMode, SocialProvider } from "../types/auth";
 import { AuthDivider } from "./AuthDivider";
 import { AuthHeader } from "./AuthHeader";
@@ -29,16 +31,41 @@ export function AuthScreen({ mode }: AuthScreenProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const copy = AUTH_COPY[mode];
+  const { startSSOFlow } = useSSO();
 
-  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [socialError, setSocialError] = useState<string | null>(null);
 
-  // Social OAuth and email delivery aren't wired to a provider yet (Clerk
-  // isn't installed) — this is UI-only until that integration lands.
-  function handleSocialAuth(_provider: SocialProvider) {}
+  const {
+    pendingEmail,
+    emailError,
+    codeError,
+    isProcessing,
+    submitEmail,
+    verifyCode,
+    cancelVerification,
+  } = useEmailAuth(mode, () => router.replace("/home"));
 
-  function handleVerified() {
-    setPendingEmail(null);
-    router.replace("/home");
+  async function handleSocialAuth(provider: SocialProvider) {
+    setSocialError(null);
+    try {
+      const { createdSessionId, signUp } = await startSSOFlow({
+        strategy: `oauth_${provider}`,
+      });
+
+      if (createdSessionId) {
+        router.replace("/home");
+        return;
+      }
+
+      if (signUp?.status === "missing_requirements") {
+        setSocialError(
+          "We need a bit more info to finish setting up your account. Please continue with email instead."
+        );
+      }
+      // Otherwise the user cancelled the flow — nothing to show.
+    } catch {
+      setSocialError("Something went wrong. Please try again.");
+    }
   }
 
   return (
@@ -69,7 +96,12 @@ export function AuthScreen({ mode }: AuthScreenProps) {
               />
             </View>
 
-            <EmailContinueForm onSubmitEmail={setPendingEmail} />
+            <EmailContinueForm
+              onSubmitEmail={submitEmail}
+              errorMessage={emailError}
+            />
+
+            {mode === "sign-up" ? <View nativeID="clerk-captcha" /> : null}
 
             <View className="my-6">
               <AuthDivider />
@@ -90,6 +122,12 @@ export function AuthScreen({ mode }: AuthScreenProps) {
               />
             </View>
 
+            {socialError ? (
+              <Text className="mt-3 text-body-sm text-error text-center">
+                {socialError}
+              </Text>
+            ) : null}
+
             <View className="mt-6 flex-row items-center justify-center gap-1">
               <Text className="text-body-md text-n300">
                 {copy.footerPrompt}
@@ -109,8 +147,10 @@ export function AuthScreen({ mode }: AuthScreenProps) {
       <VerificationModal
         visible={pendingEmail !== null}
         email={pendingEmail ?? ""}
-        onClose={() => setPendingEmail(null)}
-        onVerified={handleVerified}
+        onClose={cancelVerification}
+        onVerify={verifyCode}
+        isVerifying={isProcessing}
+        errorMessage={codeError}
       />
     </>
   );
