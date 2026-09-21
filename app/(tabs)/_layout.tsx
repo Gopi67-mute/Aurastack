@@ -1,5 +1,5 @@
 import type { BottomTabBarButtonProps } from "@react-navigation/bottom-tabs";
-import { Tabs } from "expo-router";
+import { Tabs, useRouter } from "expo-router";
 import { Home, LayoutGrid, Plus, Sparkles, User } from "lucide-react-native";
 import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,10 +11,13 @@ const INACTIVE_COLOR = colors.neutral.n300;
 
 // Renders the "Create" tab as an elevated circular action instead of a
 // standard icon+label item, per AGENTS: it must read as the primary action.
-function CreateTabButton({ onPress }: BottomTabBarButtonProps) {
+// Opens the full-screen Create Project flow instead of switching tabs.
+function CreateTabButton(_props: BottomTabBarButtonProps) {
+  const router = useRouter();
+
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => router.push("/create-project")}
       accessibilityRole="button"
       accessibilityLabel="Create a new project"
       className="flex-1 items-center justify-center"

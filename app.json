@@ -32,7 +32,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/aurastack-logo.png",
-          "imageWidth": 200,
+          "imageWidth": 400,
           "resizeMode": "contain",
           "backgroundColor": "#0B0F19"
         }
