@@ -41,6 +41,8 @@ export interface ProjectLearning {
   projectId: string;
   projectName: string;
   iconKey?: ProjectIconKey;
+  /** ISO 8601 timestamp; fallback ordering signal when no topic has been completed yet. */
+  createdAt: string;
   topics: readonly LearningTopic[];
 }
 

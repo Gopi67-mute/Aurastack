@@ -1,7 +1,9 @@
+import { useAuth } from "@clerk/expo";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useCallback, useState } from "react";
 import { useForm } from "react-hook-form";
 
+import { ApiError } from "../../../lib/api";
 import { useProjectStore } from "../../../store/useProjectStore";
 import { submitProjectDraft } from "../services/submitProjectDraft";
 import {
@@ -18,11 +20,12 @@ const EMPTY_VALUES: CreateProjectFormValues = {
 
 /**
  * Owns Create Project form state, validation, reset and submission.
- * A successful (currently mock) submit adds the project to the shared
- * project store and sets `savedDraft` for the confirmation view.
+ * A successful submit creates the project on the backend, adds it to the
+ * shared project store, and sets `savedDraft` for the confirmation view.
  */
 export function useCreateProjectForm() {
   const addProject = useProjectStore((state) => state.addProject);
+  const { getToken } = useAuth();
   const form = useForm<CreateProjectFormValues>({
     resolver: zodResolver(createProjectSchema),
     defaultValues: EMPTY_VALUES,
@@ -35,10 +38,17 @@ export function useCreateProjectForm() {
   const submit = handleSubmit(async (values) => {
     setSubmitError(null);
     try {
-      addProject(await submitProjectDraft(values));
+      addProject(await submitProjectDraft(values, getToken));
       setSavedDraft(values);
-    } catch {
-      setSubmitError("Couldn't save your project details. Please try again.");
+    } catch (err) {
+      // ApiError messages are safe, user-facing text set by lib/api.ts or the
+      // backend's response envelope — never a token, secret or stack trace —
+      // so surfacing them directly helps diagnose real failures (wrong API
+      // URL, unreachable server, validation errors) instead of hiding them
+      // behind one generic message.
+      setSubmitError(
+        err instanceof ApiError ? err.message : "Couldn't save your project details. Please try again.",
+      );
     }
   });
 

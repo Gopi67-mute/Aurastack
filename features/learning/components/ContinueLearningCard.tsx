@@ -4,10 +4,12 @@ import { Pressable, Text, View } from "react-native";
 import { colors } from "../../../theme/colors";
 import { ProgressBar } from "../../home/components/ProgressBar";
 import type { LearningSummary, LearningTopic, ProjectLearning } from "../types/learning";
+import { getContinueLearningLabel } from "../utils/getContinueLearningLabel";
 
 interface ContinueLearningCardProps {
   project: ProjectLearning;
   summary: LearningSummary;
+  /** First incomplete topic. Continue Learning only renders projects that have one. */
   nextTopic: LearningTopic;
   onPress: () => void;
 }
@@ -19,6 +21,8 @@ export function ContinueLearningCard({
   nextTopic,
   onPress,
 }: ContinueLearningCardProps) {
+  const label = getContinueLearningLabel(summary);
+
   return (
     <Pressable
       onPress={onPress}
@@ -44,7 +48,7 @@ export function ContinueLearningCard({
 
       <View className="mt-4 flex-row items-center justify-between rounded-lg bg-aura-purple/15 px-3 py-3">
         <View className="flex-1">
-          <Text className="text-caption uppercase text-n300">Continue</Text>
+          <Text className="text-caption uppercase text-n300">{label}</Text>
           <Text className="mt-1 text-body-md text-white" numberOfLines={1}>
             {nextTopic.title}
           </Text>

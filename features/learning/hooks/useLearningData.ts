@@ -21,6 +21,7 @@ export function useLearningData(): readonly ProjectLearning[] {
         projectId: project.id,
         projectName: project.name,
         iconKey: project.iconKey,
+        createdAt: project.createdAt,
         topics: getProjectTopics(project).map((topic) => {
           const saved = progress[getTopicKey(project.id, topic.id)];
           return saved

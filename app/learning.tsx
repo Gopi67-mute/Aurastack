@@ -14,7 +14,11 @@ export default function Learning() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { overall, projects } = useLearningOverview();
-  const inProgress = projects.filter(({ nextTopic }) => nextTopic !== undefined);
+  // Continue Learning is "what's next": projects with a curriculum that isn't
+  // fully completed yet. A 100% complete project never appears here, only in
+  // All Projects.
+  const continueLearning = projects.filter(({ nextTopic }) => nextTopic !== undefined);
+  const hasAnyCurriculum = projects.some(({ summary }) => summary.total > 0);
 
   return (
     <>
@@ -34,11 +38,6 @@ export default function Learning() {
           onBack={() => (router.canGoBack() ? router.back() : router.replace("/home"))}
         />
 
-        <Text className="mt-6 text-h3 text-white">Your Learning</Text>
-        <View className="mt-3">
-          <LearningOverallCard summary={overall} />
-        </View>
-
         {projects.length === 0 ? (
           <View className="mt-6 rounded-xl border border-n600 bg-n800 p-4">
             <Text className="text-h4 text-white">No projects yet</Text>
@@ -56,16 +55,21 @@ export default function Learning() {
           </View>
         ) : (
           <>
+            <Text className="mt-6 text-h3 text-white">Your Learning</Text>
+            <View className="mt-3">
+              <LearningOverallCard summary={overall} />
+            </View>
+
             <Text className="mt-6 text-h3 text-white">Continue Learning</Text>
-            {inProgress.length === 0 ? (
+            {continueLearning.length === 0 ? (
               <Text className="mt-3 text-body-md text-n300">
-                {overall.total > 0
-                  ? "You have completed every topic. Great work!"
+                {hasAnyCurriculum
+                  ? "You're all caught up. All learning topics for your projects are complete."
                   : "Learning plans are being prepared."}
               </Text>
             ) : (
               <View className="mt-3 gap-3">
-                {inProgress.map(({ project, summary, nextTopic }) =>
+                {continueLearning.map(({ project, summary, nextTopic }) =>
                   nextTopic ? (
                     <ContinueLearningCard
                       key={project.projectId}
