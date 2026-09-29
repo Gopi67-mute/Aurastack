@@ -33,7 +33,8 @@ export function VerificationModal({
   errorMessage,
 }: VerificationModalProps) {
   const insets = useSafeAreaInsets();
-  const { code, inputRef, handleChangeText, focus, reset } = useVerificationCode(onVerify);
+  const { code, inputRef, handleChangeText, focus, reset } =
+    useVerificationCode(onVerify);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
@@ -56,8 +57,10 @@ export function VerificationModal({
       return;
     }
 
-    const showEvent = Platform.OS === "android" ? "keyboardDidShow" : "keyboardWillShow";
-    const hideEvent = Platform.OS === "android" ? "keyboardDidHide" : "keyboardWillHide";
+    const showEvent =
+      Platform.OS === "android" ? "keyboardDidShow" : "keyboardWillShow";
+    const hideEvent =
+      Platform.OS === "android" ? "keyboardDidHide" : "keyboardWillHide";
 
     const showSubscription = Keyboard.addListener(showEvent, (event) => {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -81,10 +84,13 @@ export function VerificationModal({
       return;
     }
 
-    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-      onClose();
-      return true;
-    });
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        onClose();
+        return true;
+      },
+    );
 
     return () => subscription.remove();
   }, [visible, onClose]);
@@ -100,7 +106,7 @@ export function VerificationModal({
   // sheet as a plain overlay in the normal screen tree keeps it in that same
   // window, where the keyboard height listeners above work correctly.
   return (
-    <View className="absolute inset-0">
+    <View className="absolute inset-0" accessibilityViewIsModal>
       <Pressable
         className="absolute inset-0 bg-black/60"
         onPress={onClose}
@@ -111,21 +117,30 @@ export function VerificationModal({
       <View className="flex-1 justify-end">
         <View
           className="w-full rounded-t-2xl border-t border-n700 bg-n900 px-6 pt-6"
-          style={{ paddingBottom: Math.max(insets.bottom, 24) + keyboardHeight }}
+          style={{
+            paddingBottom: Math.max(insets.bottom, 24) + keyboardHeight,
+          }}
         >
-          <Pressable onPress={Keyboard.dismiss} accessibilityRole="none">
+          <View>
             <View className="flex-row items-center justify-between">
               <Text className="text-h3 text-white">Check your email</Text>
-              <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close">
+              <Pressable
+                onPress={onClose}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
                 <X size={22} color="#9CA3AF" />
               </Pressable>
             </View>
 
-            <Text className="mt-2 text-body-md text-n300">
-              We sent a {VERIFICATION_CODE_LENGTH}-digit verification code to{" "}
-              <Text className="text-n100">{email}</Text>. Enter it below to continue.
-            </Text>
-          </Pressable>
+            <Pressable onPress={Keyboard.dismiss} accessibilityRole="none">
+              <Text className="mt-2 text-body-md text-n300">
+                We sent a {VERIFICATION_CODE_LENGTH}-digit verification code to{" "}
+                <Text className="text-n100">{email}</Text>. Enter it below to
+                continue.
+              </Text>
+            </Pressable>
+          </View>
 
           <View className="mt-8">
             <VerificationCodeInput

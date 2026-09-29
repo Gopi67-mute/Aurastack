@@ -73,6 +73,10 @@ export function AuthScreen({ mode }: AuthScreenProps) {
       <KeyboardAvoidingView
         className="flex-1 bg-n900"
         behavior={Platform.OS === "ios" ? "padding" : "height"}
+        accessibilityElementsHidden={pendingEmail !== null}
+        importantForAccessibility={
+          pendingEmail !== null ? "no-hide-descendants" : "auto"
+        }
       >
         <ScrollView
           keyboardShouldPersistTaps="handled"
