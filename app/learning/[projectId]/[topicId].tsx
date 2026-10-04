@@ -1,9 +1,11 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { CircleCheck } from "lucide-react-native";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ErrorState } from "../../../components/ErrorState";
+import { LoadingState } from "../../../components/LoadingState";
 import { LearningScreenHeader } from "../../../features/learning/components/LearningScreenHeader";
 import { TopicSection } from "../../../features/learning/components/TopicSection";
 import { useLearningTopic } from "../../../features/learning/hooks/useLearningTopic";
@@ -18,13 +20,12 @@ export default function LearningTopicScreen() {
     projectId?: string | string[];
     topicId?: string | string[];
   }>();
-  const { project, topic, markCompleted } = useLearningTopic(
-    getParam(params.projectId),
-    getParam(params.topicId),
-  );
+  const { project, topic, status, error, isCompleting, completeError, markCompleted } =
+    useLearningTopic(getParam(params.projectId), getParam(params.topicId));
 
   const goBack = () => (router.canGoBack() ? router.back() : router.replace("/learning"));
   const isCompleted = topic?.status === "completed";
+  const isLoading = !topic && (status === "idle" || status === "loading");
 
   return (
     <>
@@ -44,7 +45,15 @@ export default function LearningTopicScreen() {
           onBack={goBack}
         />
 
-        {topic ? (
+        {isLoading ? (
+          <View className="mt-6">
+            <LoadingState label="topic" />
+          </View>
+        ) : !topic && status === "error" ? (
+          <View className="mt-6">
+            <ErrorState message={error ?? "Couldn't load this topic."} />
+          </View>
+        ) : topic ? (
           <View className="mt-6 gap-3">
             <TopicSection title="What is it?" body={topic.content.what} />
             <TopicSection title="Why does this project need it?" body={topic.content.why} />
@@ -55,23 +64,31 @@ export default function LearningTopicScreen() {
               <TopicSection title="Mini task (optional)" body={topic.content.miniTask} />
             ) : null}
 
+            {/* Disabled while in flight so a double press cannot fire a second
+                request; the backend is idempotent regardless. */}
             <Pressable
               onPress={markCompleted}
-              disabled={isCompleted}
+              disabled={isCompleted || isCompleting}
               accessibilityRole="button"
               accessibilityLabel={isCompleted ? "Topic completed" : "Mark as completed"}
-              accessibilityState={{ disabled: isCompleted }}
+              accessibilityState={{ disabled: isCompleted || isCompleting, busy: isCompleting }}
               className={`mt-3 h-12 flex-row items-center justify-center gap-2 rounded-lg ${
-                isCompleted ? "border border-n600 bg-n800" : "bg-aura-purple active:opacity-80"
+                isCompleted
+                  ? "border border-n600 bg-n800"
+                  : `bg-aura-purple ${isCompleting ? "opacity-60" : "active:opacity-80"}`
               }`}
             >
               {isCompleted ? (
                 <CircleCheck size={18} color={colors.semantic.success} strokeWidth={2} />
               ) : null}
+              {isCompleting ? <ActivityIndicator size="small" color={colors.neutral.white} /> : null}
               <Text className="text-body-md text-white">
-                {isCompleted ? "Completed" : "Mark as completed"}
+                {isCompleted ? "Completed" : isCompleting ? "Saving..." : "Mark as completed"}
               </Text>
             </Pressable>
+
+            {/* The completion did not persist, so never leave it looking saved. */}
+            {completeError ? <ErrorState message={completeError} onRetry={markCompleted} /> : null}
           </View>
         ) : (
           <Text className="mt-6 text-body-md text-n300">

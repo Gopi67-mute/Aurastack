@@ -8,6 +8,10 @@ def _create_project(client: TestClient, **overrides: object) -> dict:
     return response.json()["data"]
 
 
+def _first_topic_id(client: TestClient, project_id: str) -> str:
+    return client.get(f"/api/v1/projects/{project_id}/learning").json()["data"]["topics"][0]["id"]
+
+
 def test_get_learning_returns_topics_in_order_with_default_status(client: TestClient) -> None:
     project = _create_project(client)
     response = client.get(f"/api/v1/projects/{project['id']}/learning")
@@ -19,6 +23,35 @@ def test_get_learning_returns_topics_in_order_with_default_status(client: TestCl
     topics = data["topics"]
     assert [topic["order"] for topic in topics] == list(range(1, len(topics) + 1))
     assert all(topic["status"] == "not_started" and topic["completedAt"] is None for topic in topics)
+
+
+def test_list_learning_returns_every_owned_project_with_progress_applied(
+    client: TestClient,
+) -> None:
+    first = _create_project(client, title="First")
+    second = _create_project(client, title="Second")
+    topic_id = _first_topic_id(client, first["id"])
+    client.post(f"/api/v1/projects/{first['id']}/learning/{topic_id}/complete")
+
+    data = client.get("/api/v1/learning").json()["data"]
+
+    assert {entry["projectId"] for entry in data} == {first["id"], second["id"]}
+    by_project = {entry["projectId"]: entry for entry in data}
+    completed = [
+        topic for topic in by_project[first["id"]]["topics"] if topic["status"] == "completed"
+    ]
+    assert [topic["id"] for topic in completed] == [topic_id]
+    assert all(topic["status"] == "not_started" for topic in by_project[second["id"]]["topics"])
+    # Still in learning order after the batched read.
+    for entry in data:
+        orders = [topic["order"] for topic in entry["topics"]]
+        assert orders == sorted(orders)
+
+
+def test_list_learning_excludes_other_users_projects(client: TestClient) -> None:
+    _create_project(client)
+
+    assert client.get("/api/v1/learning", headers={"x-test-user-id": "user-b"}).json()["data"] == []
 
 
 def test_get_learning_for_unowned_project_returns_404(client: TestClient) -> None:

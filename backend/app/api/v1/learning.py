@@ -9,6 +9,19 @@ from app.services.project_service import ProjectNotFoundError
 
 router = APIRouter(prefix="/projects/{project_id}/learning", tags=["learning"])
 
+# Cross-project learning, kept on its own prefix because it is not scoped to
+# one project id. Backs the Home and Learning overviews in a single request.
+overview_router = APIRouter(prefix="/learning", tags=["learning"])
+
+
+@overview_router.get("", response_model=APIResponse[list[ProjectLearning]])
+async def list_learning(
+    user_id: str = Depends(get_current_user_id),
+    service: LearningService = Depends(get_learning_service),
+) -> APIResponse[list[ProjectLearning]]:
+    learning = await service.list_learning(user_id)
+    return APIResponse(success=True, message="Learning retrieved", data=learning)
+
 
 @router.get("", response_model=APIResponse[ProjectLearning])
 async def get_project_learning(

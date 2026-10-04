@@ -53,6 +53,9 @@ class FakeLearningRepository:
     async def list_topics(self, project_id: str) -> list[dict[str, Any]]:
         return sorted(self._topics.get(project_id, []), key=lambda topic: topic["order"])
 
+    async def list_topics_for_projects(self, project_ids: list[str]) -> list[dict[str, Any]]:
+        return [topic for project_id in project_ids for topic in self._topics.get(project_id, [])]
+
     async def get_topic(self, project_id: str, topic_id: str) -> dict[str, Any] | None:
         for topic in self._topics.get(project_id, []):
             if topic["id"] == topic_id:
@@ -71,10 +74,27 @@ class FakeLearningRepository:
     ) -> dict[str, Any] | None:
         return self._progress.get((user_id, project_id, topic_id))
 
+    async def list_progress_for_projects(
+        self, user_id: str, project_ids: list[str]
+    ) -> list[dict[str, Any]]:
+        return [
+            value
+            for key, value in self._progress.items()
+            if key[0] == user_id and key[1] in project_ids
+        ]
+
     async def upsert_progress(
         self, user_id: str, project_id: str, topic_id: str, status: str, completed_at: str | None
     ) -> None:
-        self._progress[(user_id, project_id, topic_id)] = {"status": status, "completed_at": completed_at}
+        # Stores the filter fields too, matching Mongo's upsert behaviour of
+        # copying equality filters into a newly inserted document.
+        self._progress[(user_id, project_id, topic_id)] = {
+            "user_id": user_id,
+            "project_id": project_id,
+            "topic_id": topic_id,
+            "status": status,
+            "completed_at": completed_at,
+        }
 
     async def delete_for_project(self, project_id: str) -> None:
         self._topics.pop(project_id, None)
@@ -86,11 +106,19 @@ class FakeActivityRepository:
     def __init__(self) -> None:
         self.events: list[dict[str, Any]] = []
 
-    async def insert(self, event: dict[str, Any]) -> None:
-        self.events.append(event)
+    async def record(self, event: dict[str, Any]) -> bool:
+        """Mirrors the unique `(user_id, id)` index the real collection has."""
 
-    async def list_for_user(self, user_id: str, limit: int = 200) -> list[dict[str, Any]]:
-        return [event for event in self.events if event["user_id"] == user_id][:limit]
+        key = (event["user_id"], event["id"])
+        if any((existing["user_id"], existing["id"]) == key for existing in self.events):
+            return False
+        self.events.append(event)
+        return True
+
+    async def list_for_user(self, user_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        matching = [event for event in self.events if event["user_id"] == user_id]
+        matching.sort(key=lambda event: event["occurred_at"], reverse=True)
+        return matching[:limit]
 
     async def delete_for_project(self, project_id: str) -> None:
         self.events = [event for event in self.events if event["project_id"] != project_id]

@@ -1,43 +1,45 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
 
-import { createMockProjects } from "../features/projects/constants/mockProjects";
+import { getProjects } from "../features/projects/services/getProjects";
 import type { Project } from "../features/projects/types/projects";
+import type { GetToken } from "../lib/api";
+import { shouldLoad, toErrorMessage, type RemoteStatus } from "../lib/remoteData";
 
-/** Follows the `auraStack.<domain>.<key>` convention of onboardingStorage. */
-const PROJECTS_STORAGE_KEY = "auraStack.projects";
-
-/** Bump when the persisted `Project` shape changes and add a `migrate`. */
-const PROJECTS_STORAGE_VERSION = 1;
+const LOAD_ERROR = "Couldn't load your projects.";
 
 interface ProjectStoreState {
   projects: readonly Project[];
+  status: RemoteStatus;
+  error: string | null;
+  /** Fetches once per session; `force` refetches (e.g. pull to refresh). */
+  load: (getToken: GetToken, force?: boolean) => Promise<void>;
+  /** Adds a project the backend just created, so the list updates immediately. */
   addProject: (project: Project) => void;
 }
 
 /**
- * Client-side project list shared by Home, Projects and Create Project.
- * Persisted to AsyncStorage so projects survive reloads and restarts.
+ * The user's projects, as returned by the backend. Shared by Home, Projects,
+ * the workspace and Learning so every screen shows the same list.
  *
- * The mock projects are only the initial state: on first launch nothing is
- * persisted so they are used (and saved on the first change); once a
- * persisted collection exists, it replaces them on rehydration, so mocks
- * never overwrite user-created projects. The server (FastAPI → MongoDB)
- * becomes the source of truth later.
+ * Not persisted: the backend is the source of truth, and caching one user's
+ * projects on the device would risk showing them after a different user signs
+ * in. A previously fetched list is kept on a failed refetch so the UI can show
+ * stale data alongside the error rather than emptying out.
  */
-export const useProjectStore = create<ProjectStoreState>()(
-  persist(
-    (set) => ({
-      projects: createMockProjects(),
-      addProject: (project) =>
-        set((state) => ({ projects: [project, ...state.projects] })),
-    }),
-    {
-      name: PROJECTS_STORAGE_KEY,
-      version: PROJECTS_STORAGE_VERSION,
-      storage: createJSONStorage(() => AsyncStorage),
-      partialize: (state) => ({ projects: state.projects }),
-    },
-  ),
-);
+export const useProjectStore = create<ProjectStoreState>()((set, get) => ({
+  projects: [],
+  status: "idle",
+  error: null,
+
+  load: async (getToken, force = false) => {
+    if (!shouldLoad(get().status, force)) return;
+    set({ status: "loading", error: null });
+    try {
+      set({ projects: await getProjects(getToken), status: "ready", error: null });
+    } catch (err) {
+      set({ status: "error", error: toErrorMessage(err, LOAD_ERROR) });
+    }
+  },
+
+  addProject: (project) => set((state) => ({ projects: [project, ...state.projects] })),
+}));

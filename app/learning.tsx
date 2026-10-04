@@ -3,6 +3,8 @@ import { StatusBar } from "expo-status-bar";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ErrorState } from "../components/ErrorState";
+import { LoadingState } from "../components/LoadingState";
 import { ContinueLearningCard } from "../features/learning/components/ContinueLearningCard";
 import { LearningOverallCard } from "../features/learning/components/LearningOverallCard";
 import { LearningScreenHeader } from "../features/learning/components/LearningScreenHeader";
@@ -13,7 +15,8 @@ import { useLearningOverview } from "../features/learning/hooks/useLearningOverv
 export default function Learning() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { overall, projects } = useLearningOverview();
+  const { overall, projects, status, error, refresh } = useLearningOverview();
+  const isLoading = projects.length === 0 && (status === "idle" || status === "loading");
   // Continue Learning is "what's next": projects with a curriculum that isn't
   // fully completed yet. A 100% complete project never appears here, only in
   // All Projects.
@@ -38,7 +41,18 @@ export default function Learning() {
           onBack={() => (router.canGoBack() ? router.back() : router.replace("/home"))}
         />
 
-        {projects.length === 0 ? (
+        {isLoading ? (
+          <View className="mt-6">
+            <LoadingState label="learning topics" />
+          </View>
+        ) : projects.length === 0 && status === "error" ? (
+          <View className="mt-6">
+            <ErrorState
+              message={error ?? "Couldn't load your learning topics."}
+              onRetry={refresh}
+            />
+          </View>
+        ) : projects.length === 0 ? (
           <View className="mt-6 rounded-xl border border-n600 bg-n800 p-4">
             <Text className="text-h4 text-white">No projects yet</Text>
             <Text className="mt-1 text-body-sm text-n300">

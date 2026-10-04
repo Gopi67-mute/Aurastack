@@ -24,3 +24,24 @@ export interface WeeklyTotals {
   topics: number;
   milestones: number;
 }
+
+/**
+ * The backend-authoritative Momentum/Streak state, returned by
+ * GET /api/v1/momentum. Mirrors backend/app/schemas/activity.py::MomentumState.
+ *
+ * The backend owns every calendar-day and streak decision here; the client
+ * only renders it.
+ */
+export interface MomentumState {
+  streakDays: number;
+  /** A qualifying activity already happened today in `timezone`. */
+  isActiveToday: boolean;
+  /** Most recent active calendar day as YYYY-MM-DD, in `timezone`. */
+  lastActivityDay: string | null;
+  totalActiveDays: number;
+  /** The IANA timezone every day in this response was resolved against. */
+  timezone: string;
+  week: readonly WeekDay[];
+  weekly: WeeklyTotals;
+  recentActivity: readonly ActivityEvent[];
+}

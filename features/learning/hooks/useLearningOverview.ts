@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 
+import type { RemoteStatus } from "../../../lib/remoteData";
 import type { LearningSummary, LearningTopic, ProjectLearning } from "../types/learning";
 import { getLastActivityAt } from "../utils/getLastActivityAt";
 import { getNextTopic } from "../utils/getNextTopic";
@@ -24,9 +25,12 @@ export interface ProjectLearningOverview {
 export function useLearningOverview(): {
   overall: LearningSummary;
   projects: readonly ProjectLearningOverview[];
+  status: RemoteStatus;
+  error: string | null;
+  refresh: () => Promise<void>;
 } {
-  const data = useLearningData();
-  return useMemo(() => {
+  const { data, status, error, refresh } = useLearningData();
+  const derived = useMemo(() => {
     const projects = data
       .map((project) => ({
         project,
@@ -35,9 +39,8 @@ export function useLearningOverview(): {
       }))
       .sort((a, b) => getLastActivityAt(b.project).localeCompare(getLastActivityAt(a.project)));
 
-    return {
-      overall: summarizeTopics(data.flatMap((project) => project.topics)),
-      projects,
-    };
+    return { overall: summarizeTopics(data.flatMap((project) => project.topics)), projects };
   }, [data]);
+
+  return { ...derived, status, error, refresh };
 }

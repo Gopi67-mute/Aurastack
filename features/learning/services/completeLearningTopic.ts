@@ -1,30 +1,23 @@
-import { useActivityStore } from "../../../store/useActivityStore";
-import { useLearningStore } from "../../../store/useLearningStore";
-import type { LearningTopic, ProjectLearning } from "../types/learning";
+import { api, type GetToken } from "../../../lib/api";
+import type { LearningTopic } from "../types/learning";
 
 /**
- * Marks a topic completed (recording `completedAt`) and records a learning
- * activity event, which Momentum lists and the daily streak counts.
+ * Marks a topic completed on the backend, which persists the completion and
+ * records the qualifying learning activity the streak is built from.
  *
- * Side effects: writes the learning and activity stores. Idempotent: a topic
- * that is already completed records nothing, so a repeated press cannot
- * inflate activity.
+ * Idempotent server-side: completing an already-completed topic returns its
+ * original `completedAt` and cannot add a second qualifying activity, so a
+ * repeated press or a retried request never inflates the streak.
+ *
+ * Returns the backend's updated topic — the authoritative state to store.
  */
-export function completeLearningTopic(
-  project: Pick<ProjectLearning, "projectId" | "projectName">,
-  topic: LearningTopic,
-): void {
-  if (topic.status === "completed") return;
-
-  const now = new Date();
-  const completedAt = now.toISOString();
-  useLearningStore.getState().setTopicStatus(project.projectId, topic.id, "completed", completedAt);
-  useActivityStore.getState().addEvent({
-    id: `learning-${project.projectId}-${topic.id}-${now.getTime()}`,
-    type: "learning",
-    description: `Finished ${topic.title} learning topic`,
-    projectId: project.projectId,
-    projectName: project.projectName,
-    occurredAt: completedAt,
-  });
+export async function completeLearningTopic(
+  projectId: string,
+  topicId: string,
+  getToken: GetToken,
+): Promise<LearningTopic> {
+  return api.post<LearningTopic>(
+    `/api/v1/projects/${projectId}/learning/${topicId}/complete`,
+    getToken,
+  );
 }

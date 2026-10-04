@@ -18,6 +18,12 @@ class LearningRepository:
         cursor = self._topics.find({"project_id": project_id}).sort("order", 1)
         return [doc async for doc in cursor]
 
+    async def list_topics_for_projects(self, project_ids: list[str]) -> list[dict[str, Any]]:
+        if not project_ids:
+            return []
+        cursor = self._topics.find({"project_id": {"$in": project_ids}}).sort("order", 1)
+        return [doc async for doc in cursor]
+
     async def get_topic(self, project_id: str, topic_id: str) -> dict[str, Any] | None:
         return await self._topics.find_one({"project_id": project_id, "id": topic_id})
 
@@ -25,6 +31,14 @@ class LearningRepository:
         cursor = self._progress.find({"user_id": user_id, "project_id": project_id})
         docs = [doc async for doc in cursor]
         return {doc["topic_id"]: doc for doc in docs}
+
+    async def list_progress_for_projects(
+        self, user_id: str, project_ids: list[str]
+    ) -> list[dict[str, Any]]:
+        if not project_ids:
+            return []
+        cursor = self._progress.find({"user_id": user_id, "project_id": {"$in": project_ids}})
+        return [doc async for doc in cursor]
 
     async def get_progress(
         self, user_id: str, project_id: str, topic_id: str

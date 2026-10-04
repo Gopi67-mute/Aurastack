@@ -23,8 +23,13 @@ async def connect_to_mongo() -> None:
     await _state.db.learning_progress.create_index(
         [("user_id", 1), ("project_id", 1), ("topic_id", 1)], unique=True
     )
+    # Streak reads: newest-first scan of one user's activity.
     await _state.db.activity_events.create_index([("user_id", 1), ("occurred_at", -1)])
     await _state.db.activity_events.create_index([("project_id", 1)])
+    # Idempotency: the activity id is deterministic per logical event
+    # (see activity_service.learning_activity_id), so this is what stops a
+    # retried completion creating a second qualifying activity.
+    await _state.db.activity_events.create_index([("user_id", 1), ("id", 1)], unique=True)
 
 
 async def close_mongo_connection() -> None:

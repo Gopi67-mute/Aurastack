@@ -1,15 +1,34 @@
-import { useMemo } from "react";
+import { useCallback, useEffect } from "react";
 
+import { useStableGetToken } from "../../../hooks/useStableGetToken";
 import { useProjectStore } from "../../../store/useProjectStore";
+import type { RemoteStatus } from "../../../lib/remoteData";
 import type { Project } from "../types/projects";
 
-function byNewestFirst(a: Project, b: Project): number {
-  return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+export interface UseProjectsResult {
+  /** Newest first, as ordered by the backend. */
+  projects: readonly Project[];
+  status: RemoteStatus;
+  error: string | null;
+  refresh: () => Promise<void>;
 }
 
-/** Returns the user's projects from the shared store, most recently created first. */
-export function useProjects(): { projects: readonly Project[] } {
-  const stored = useProjectStore((state) => state.projects);
-  const projects = useMemo(() => [...stored].sort(byNewestFirst), [stored]);
-  return { projects };
+/**
+ * The user's projects from the backend, shared through the project store so
+ * several mounted screens trigger a single request.
+ */
+export function useProjects(): UseProjectsResult {
+  const getToken = useStableGetToken();
+  const projects = useProjectStore((state) => state.projects);
+  const status = useProjectStore((state) => state.status);
+  const error = useProjectStore((state) => state.error);
+  const load = useProjectStore((state) => state.load);
+
+  useEffect(() => {
+    load(getToken);
+  }, [load, getToken]);
+
+  const refresh = useCallback(() => load(getToken, true), [load, getToken]);
+
+  return { projects, status, error, refresh };
 }

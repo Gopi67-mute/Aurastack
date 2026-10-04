@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { ApiError } from "../../../lib/api";
+import { useLearningStore } from "../../../store/useLearningStore";
 import { useProjectStore } from "../../../store/useProjectStore";
 import { submitProjectDraft } from "../services/submitProjectDraft";
 import {
@@ -25,6 +26,7 @@ const EMPTY_VALUES: CreateProjectFormValues = {
  */
 export function useCreateProjectForm() {
   const addProject = useProjectStore((state) => state.addProject);
+  const loadLearning = useLearningStore((state) => state.load);
   const { getToken } = useAuth();
   const form = useForm<CreateProjectFormValues>({
     resolver: zodResolver(createProjectSchema),
@@ -40,6 +42,10 @@ export function useCreateProjectForm() {
     try {
       addProject(await submitProjectDraft(values, getToken));
       setSavedDraft(values);
+      // The backend generated this project's curriculum, so pull the learning
+      // data again to pick it up. A failure here is not a failed submit: the
+      // project is already persisted, and Learning retries on its own.
+      loadLearning(getToken, true).catch(() => {});
     } catch (err) {
       // ApiError messages are safe, user-facing text set by lib/api.ts or the
       // backend's response envelope — never a token, secret or stack trace —
@@ -51,6 +57,8 @@ export function useCreateProjectForm() {
       );
     }
   });
+  // `loadLearning` is a stable store action, so the submit handler above does
+  // not need to be rebuilt for it.
 
   // No-op when nothing has been entered and nothing is showing an error.
   const resetForm = useCallback(() => {

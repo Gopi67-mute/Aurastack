@@ -1,63 +1,73 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
 
-import type { TopicProgress, TopicStatus } from "../features/learning/types/learning";
+import { getLearning } from "../features/learning/services/getLearning";
+import type { LearningTopic, ProjectLearning } from "../features/learning/types/learning";
 import { getTopicKey } from "../features/learning/utils/topicKey";
+import type { GetToken } from "../lib/api";
+import { shouldLoad, toErrorMessage, type RemoteStatus } from "../lib/remoteData";
 
-/** Follows the `auraStack.<domain>.<key>` convention of the project store. */
-const LEARNING_STORAGE_KEY = "auraStack.learning";
-
-/** v2: `statuses` (status only) became `progress` (status + completedAt). */
-const LEARNING_STORAGE_VERSION = 2;
+const LOAD_ERROR = "Couldn't load your learning topics.";
 
 interface LearningStoreState {
-  /** User progress on top of the topic catalog, keyed by `getTopicKey`. */
-  progress: Readonly<Record<string, TopicProgress>>;
-  /** `completedAt` is only kept for completed topics. */
-  setTopicStatus: (
-    projectId: string,
-    topicId: string,
-    status: TopicStatus,
-    completedAt?: string,
-  ) => void;
-}
-
-interface PersistedLearningV1 {
-  statuses?: Readonly<Record<string, TopicStatus>>;
+  /** Curricula with the user's persisted progress already applied by the backend. */
+  learning: readonly ProjectLearning[];
+  status: RemoteStatus;
+  error: string | null;
+  /**
+   * Topics opened during this session, keyed by `getTopicKey`. Read as
+   * "in_progress" on top of the backend's status. Deliberately not persisted:
+   * opening a topic is a UI signal, not a completion, and only completions are
+   * server state.
+   */
+  openedTopics: Readonly<Record<string, true>>;
+  /** Fetches once per session; `force` refetches. */
+  load: (getToken: GetToken, force?: boolean) => Promise<void>;
+  markOpened: (projectId: string, topicId: string) => void;
+  /** Stores the topic the backend returned from a completion. */
+  applyCompletedTopic: (projectId: string, completed: LearningTopic) => void;
 }
 
 /**
- * Client-side learning progress. Only progress is persisted; the topic
- * catalog stays outside the store and is derived from the projects. The
- * server (FastAPI → MongoDB) becomes the source of truth later.
+ * Learning topics and progress, as returned by the backend. Single source for
+ * Home, both Learning views and topic completion.
+ *
+ * Not persisted: completions live in MongoDB, so the server is the source of
+ * truth and a device cache could otherwise show one user's progress to the
+ * next one to sign in.
  */
-export const useLearningStore = create<LearningStoreState>()(
-  persist(
-    (set) => ({
-      progress: {},
-      setTopicStatus: (projectId, topicId, status, completedAt) =>
-        set((state) => ({
-          progress: {
-            ...state.progress,
-            [getTopicKey(projectId, topicId)]:
-              status === "completed" ? { status, completedAt } : { status },
-          },
-        })),
-    }),
-    {
-      name: LEARNING_STORAGE_KEY,
-      version: LEARNING_STORAGE_VERSION,
-      storage: createJSONStorage(() => AsyncStorage),
-      partialize: (state) => ({ progress: state.progress }),
-      migrate: (persisted, version) => {
-        if (version >= LEARNING_STORAGE_VERSION) return persisted as LearningStoreState;
-        const { statuses = {} } = (persisted ?? {}) as PersistedLearningV1;
-        const progress = Object.fromEntries(
-          Object.entries(statuses).map(([key, status]) => [key, { status }]),
-        );
-        return { progress } as unknown as LearningStoreState;
-      },
-    },
-  ),
-);
+export const useLearningStore = create<LearningStoreState>()((set, get) => ({
+  learning: [],
+  status: "idle",
+  error: null,
+  openedTopics: {},
+
+  load: async (getToken, force = false) => {
+    if (!shouldLoad(get().status, force)) return;
+    set({ status: "loading", error: null });
+    try {
+      set({ learning: await getLearning(getToken), status: "ready", error: null });
+    } catch (err) {
+      set({ status: "error", error: toErrorMessage(err, LOAD_ERROR) });
+    }
+  },
+
+  markOpened: (projectId, topicId) => {
+    const key = getTopicKey(projectId, topicId);
+    if (get().openedTopics[key]) return;
+    set((state) => ({ openedTopics: { ...state.openedTopics, [key]: true } }));
+  },
+
+  applyCompletedTopic: (projectId, completed) =>
+    set((state) => ({
+      learning: state.learning.map((project) =>
+        project.projectId === projectId
+          ? {
+              ...project,
+              topics: project.topics.map((topic) =>
+                topic.id === completed.id ? completed : topic,
+              ),
+            }
+          : project,
+      ),
+    })),
+}));

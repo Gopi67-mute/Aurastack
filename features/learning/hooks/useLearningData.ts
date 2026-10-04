@@ -1,34 +1,53 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
+import { useStableGetToken } from "../../../hooks/useStableGetToken";
+import type { RemoteStatus } from "../../../lib/remoteData";
 import { useLearningStore } from "../../../store/useLearningStore";
-import { useProjects } from "../../projects/hooks/useProjects";
-import { getProjectTopics } from "../services/getProjectTopics";
 import type { ProjectLearning } from "../types/learning";
 import { getTopicKey } from "../utils/topicKey";
 
+export interface UseLearningDataResult {
+  data: readonly ProjectLearning[];
+  status: RemoteStatus;
+  error: string | null;
+  refresh: () => Promise<void>;
+}
+
 /**
- * Projects → topics → progress. Each project from the shared project store
- * (same list and order as the Projects tab) gets its topic catalog with the
- * user's persisted progress applied. The single source for Home, both
- * Learning views and completion, so a new project appears everywhere at once.
+ * Every project's curriculum with the user's progress, from the backend.
+ * The single source for Home, both Learning views and completion, so a new
+ * project appears everywhere at once.
+ *
+ * Statuses come from the backend, with one client-side addition: a topic the
+ * user opened this session shows as `in_progress` while the backend still
+ * reports `not_started`. Only completions are server state.
  */
-export function useLearningData(): readonly ProjectLearning[] {
-  const { projects } = useProjects();
-  const progress = useLearningStore((state) => state.progress);
-  return useMemo(
+export function useLearningData(): UseLearningDataResult {
+  const getToken = useStableGetToken();
+  const learning = useLearningStore((state) => state.learning);
+  const openedTopics = useLearningStore((state) => state.openedTopics);
+  const status = useLearningStore((state) => state.status);
+  const error = useLearningStore((state) => state.error);
+  const load = useLearningStore((state) => state.load);
+
+  useEffect(() => {
+    load(getToken);
+  }, [load, getToken]);
+
+  const refresh = useCallback(() => load(getToken, true), [load, getToken]);
+
+  const data = useMemo(
     () =>
-      projects.map((project) => ({
-        projectId: project.id,
-        projectName: project.name,
-        iconKey: project.iconKey,
-        createdAt: project.createdAt,
-        topics: getProjectTopics(project).map((topic) => {
-          const saved = progress[getTopicKey(project.id, topic.id)];
-          return saved
-            ? { ...topic, status: saved.status, completedAt: saved.completedAt }
-            : topic;
-        }),
+      learning.map((project) => ({
+        ...project,
+        topics: project.topics.map((topic) =>
+          topic.status === "not_started" && openedTopics[getTopicKey(project.projectId, topic.id)]
+            ? { ...topic, status: "in_progress" as const }
+            : topic,
+        ),
       })),
-    [projects, progress],
+    [learning, openedTopics],
   );
+
+  return { data, status, error, refresh };
 }

@@ -4,5 +4,9 @@ motor>=3.6.1
 pydantic>=2.10.4
 pydantic-settings>=2.7.0
 PyJWT[crypto]>=2.10.1
+# IANA timezone database for `zoneinfo`. Required: Windows and slim Docker
+# images ship no system tz database, so streak calendar days cannot be
+# resolved without it.
+tzdata>=2025.1
 httpx>=0.28.1
 python-dotenv>=1.0.1

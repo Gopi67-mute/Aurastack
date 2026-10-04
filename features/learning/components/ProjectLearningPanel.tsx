@@ -2,7 +2,10 @@ import { useRouter } from "expo-router";
 import { CircleCheck } from "lucide-react-native";
 import { Text, View } from "react-native";
 
+import { ErrorState } from "../../../components/ErrorState";
+import { LoadingState } from "../../../components/LoadingState";
 import { colors } from "../../../theme/colors";
+import { useLearningData } from "../hooks/useLearningData";
 import { useProjectLearning } from "../hooks/useProjectLearning";
 import { LearningOverallCard } from "./LearningOverallCard";
 import { NextTopicCard } from "./NextTopicCard";
@@ -19,7 +22,19 @@ interface ProjectLearningPanelProps {
  */
 export function ProjectLearningPanel({ projectId }: ProjectLearningPanelProps) {
   const router = useRouter();
-  const { project, summary, nextTopic } = useProjectLearning(projectId);
+  const { project, summary, nextTopic, status, error } = useProjectLearning(projectId);
+  const { refresh } = useLearningData();
+
+  // "Not found" is only trustworthy once the curricula have actually loaded.
+  if (!project && (status === "idle" || status === "loading")) {
+    return <LoadingState label="learning topics" />;
+  }
+
+  if (!project && status === "error") {
+    return (
+      <ErrorState message={error ?? "Couldn't load your learning topics."} onRetry={refresh} />
+    );
+  }
 
   if (!project) {
     return (

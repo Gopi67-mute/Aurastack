@@ -1,9 +1,11 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useState } from "react";
-import { ActivityIndicator, ScrollView, Text, View } from "react-native";
+import { ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ErrorState } from "../../components/ErrorState";
+import { LoadingState } from "../../components/LoadingState";
 import { ProjectNotFound } from "../../features/project-workspace/components/ProjectNotFound";
 import { ProjectSummaryCard } from "../../features/project-workspace/components/ProjectSummaryCard";
 import { WorkspaceHeader } from "../../features/project-workspace/components/WorkspaceHeader";
@@ -12,7 +14,6 @@ import { WorkspaceTabs } from "../../features/project-workspace/components/Works
 import { DEFAULT_WORKSPACE_SECTION } from "../../features/project-workspace/constants/sections";
 import { useProjectById } from "../../features/project-workspace/hooks/useProjectById";
 import type { WorkspaceSectionKey } from "../../features/project-workspace/types/workspace";
-import { colors } from "../../theme/colors";
 
 // Full-screen project detail route (outside the tabs), like /create-project.
 export default function ProjectWorkspace() {
@@ -20,18 +21,25 @@ export default function ProjectWorkspace() {
   const router = useRouter();
   const { projectId } = useLocalSearchParams<{ projectId?: string | string[] }>();
   const id = Array.isArray(projectId) ? projectId[0] : projectId;
-  const { project, isHydrated } = useProjectById(id);
+  const { project, status, error, refresh } = useProjectById(id);
   const [section, setSection] = useState<WorkspaceSectionKey>(DEFAULT_WORKSPACE_SECTION);
 
   // Back pops to Projects normally; falls back there when opened directly.
   const goBack = () => (router.canGoBack() ? router.back() : router.replace("/projects"));
 
   const renderBody = () => {
-    if (!isHydrated) {
+    // "Not found" is only trustworthy once the project list has actually loaded.
+    if (!project && (status === "idle" || status === "loading")) {
       return (
-        <View className="flex-1 items-center justify-center" accessibilityLabel="Loading project">
-          <ActivityIndicator color={colors.brand.auraPurple} />
-          <Text className="mt-3 text-body-md text-n300">Loading project...</Text>
+        <View className="flex-1 justify-center px-4">
+          <LoadingState label="project" />
+        </View>
+      );
+    }
+    if (!project && status === "error") {
+      return (
+        <View className="flex-1 justify-center px-4">
+          <ErrorState message={error ?? "Couldn't load this project."} onRetry={refresh} />
         </View>
       );
     }

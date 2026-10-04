@@ -4,6 +4,8 @@ import { ChevronLeft } from "lucide-react-native";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ErrorState } from "../components/ErrorState";
+import { LoadingState } from "../components/LoadingState";
 import { ActivityItem } from "../features/progress/components/ActivityItem";
 import { StreakCard } from "../features/progress/components/StreakCard";
 import { WeeklyStats } from "../features/progress/components/WeeklyStats";
@@ -11,10 +13,13 @@ import { useProgressOverview } from "../features/progress/hooks/useProgressOverv
 import { colors } from "../theme/colors";
 
 // Global development momentum across all projects. Not a single project's progress.
+// Every figure here is calculated by the backend against the user's timezone.
 export default function Progress() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { streakDays, week, weekly, recentActivity } = useProgressOverview();
+  const { streakDays, week, weekly, recentActivity, status, error, refresh } =
+    useProgressOverview();
+  const isLoading = status === "idle" || status === "loading";
 
   return (
     <>
@@ -43,26 +48,38 @@ export default function Progress() {
           See your development momentum and recent activity.
         </Text>
 
-        <View className="mt-6">
-          <StreakCard streakDays={streakDays} week={week} />
-        </View>
-
-        <Text className="mt-6 text-h3 text-white">Last 7 days</Text>
-        <View className="mt-3">
-          <WeeklyStats totals={weekly} />
-        </View>
-
-        <Text className="mt-6 text-h3 text-white">Recent activity</Text>
-        {recentActivity.length === 0 ? (
-          <Text className="mt-3 text-body-md text-n300">
-            No activity yet. Complete a task to see it here.
-          </Text>
-        ) : (
-          <View className="mt-3 gap-3">
-            {recentActivity.map((event) => (
-              <ActivityItem key={event.id} event={event} />
-            ))}
+        {isLoading ? (
+          <View className="mt-6">
+            <LoadingState label="momentum" />
           </View>
+        ) : status === "error" ? (
+          <View className="mt-6">
+            <ErrorState message={error ?? "Couldn't load your momentum."} onRetry={refresh} />
+          </View>
+        ) : (
+          <>
+            <View className="mt-6">
+              <StreakCard streakDays={streakDays} week={week} />
+            </View>
+
+            <Text className="mt-6 text-h3 text-white">Last 7 days</Text>
+            <View className="mt-3">
+              <WeeklyStats totals={weekly} />
+            </View>
+
+            <Text className="mt-6 text-h3 text-white">Recent activity</Text>
+            {recentActivity.length === 0 ? (
+              <Text className="mt-3 text-body-md text-n300">
+                No activity yet. Complete a learning topic to see it here.
+              </Text>
+            ) : (
+              <View className="mt-3 gap-3">
+                {recentActivity.map((event) => (
+                  <ActivityItem key={event.id} event={event} />
+                ))}
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
     </>
