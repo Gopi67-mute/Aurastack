@@ -5,12 +5,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.v1.router import router as api_v1_router
-from app.db.mongodb import close_mongo_connection, connect_to_mongo
+from app.db.migrations import migrate_generation_lifecycle
+from app.db.mongodb import close_mongo_connection, connect_to_mongo, get_database
+from app.repositories.learning_repository import LearningRepository
+from app.repositories.project_repository import ProjectRepository
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_to_mongo()
+    db = get_database()
+    await migrate_generation_lifecycle(ProjectRepository(db), LearningRepository(db))
     yield
     await close_mongo_connection()
 

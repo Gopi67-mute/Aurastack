@@ -34,8 +34,13 @@ class LearningService:
 
         project_docs = await self._projects.list_for_user(user_id)
         project_ids = [doc["id"] for doc in project_docs]
+        active_versions = {
+            doc["id"]: version
+            for doc in project_docs
+            if (version := _active_curriculum_version(doc)) is not None
+        }
 
-        topic_docs = await self._learning.list_topics_for_projects(project_ids)
+        topic_docs = await self._learning.list_topics_for_projects(active_versions)
         progress_docs = await self._learning.list_progress_for_projects(user_id, project_ids)
 
         topics_by_project: dict[str, list[dict[str, Any]]] = {}
@@ -66,7 +71,8 @@ class LearningService:
     async def get_project_learning(self, user_id: str, project_id: str) -> ProjectLearning:
         project_doc = await self._require_owned_project(user_id, project_id)
 
-        topic_docs = await self._learning.list_topics(project_id)
+        version = _active_curriculum_version(project_doc)
+        topic_docs = [] if version is None else await self._learning.list_topics(project_id, version)
         progress_by_topic = await self._learning.list_progress_for_project(user_id, project_id)
 
         topics = [
@@ -82,8 +88,8 @@ class LearningService:
         )
 
     async def get_topic(self, user_id: str, project_id: str, topic_id: str) -> LearningTopic:
-        await self._require_owned_project(user_id, project_id)
-        topic_doc = await self._require_topic(project_id, topic_id)
+        project_doc = await self._require_owned_project(user_id, project_id)
+        topic_doc = await self._require_topic(project_doc, topic_id)
         progress = await self._learning.get_progress(user_id, project_id, topic_id)
         return _topic_from_docs(topic_doc, progress)
 
@@ -102,7 +108,7 @@ class LearningService:
         """
 
         project_doc = await self._require_owned_project(user_id, project_id)
-        topic_doc = await self._require_topic(project_id, topic_id)
+        topic_doc = await self._require_topic(project_doc, topic_id)
 
         existing = await self._learning.get_progress(user_id, project_id, topic_id)
         completed_at = (
@@ -134,11 +140,26 @@ class LearningService:
             raise ProjectNotFoundError(project_id)
         return project_doc
 
-    async def _require_topic(self, project_id: str, topic_id: str) -> dict[str, Any]:
-        topic_doc = await self._learning.get_topic(project_id, topic_id)
+    async def _require_topic(self, project_doc: dict[str, Any], topic_id: str) -> dict[str, Any]:
+        """A topic of the project's active curriculum only; anything left over
+        from a failed or superseded generation attempt is not found."""
+
+        version = _active_curriculum_version(project_doc)
+        topic_doc = (
+            None
+            if version is None
+            else await self._learning.get_topic(project_doc["id"], version, topic_id)
+        )
         if topic_doc is None:
             raise TopicNotFoundError(topic_id)
         return topic_doc
+
+
+def _active_curriculum_version(project_doc: dict[str, Any]) -> int | None:
+    """None until a generation has succeeded for the project."""
+
+    curriculum = project_doc.get("curriculum")
+    return curriculum["version"] if curriculum else None
 
 
 def _topic_from_docs(topic_doc: dict[str, Any], progress_doc: dict[str, Any] | None) -> LearningTopic:

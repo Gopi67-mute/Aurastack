@@ -6,7 +6,7 @@ import { ProgressBar } from "../../home/components/ProgressBar";
 import { formatRelativeTime } from "../../home/utils/formatRelativeTime";
 import { clampProgress } from "../../home/utils/getAuraMessage";
 import type { Project } from "../../projects/types/projects";
-import { getProjectSubtitle } from "../../projects/utils/projectDisplay";
+import { getProjectStatusLabel, getProjectSubtitle } from "../../projects/utils/projectDisplay";
 
 interface ProjectSummaryCardProps {
   project: Project;
@@ -16,9 +16,7 @@ export function ProjectSummaryCard({ project }: ProjectSummaryCardProps) {
   const Icon = getProjectIcon(project.iconKey);
   const percent = clampProgress(project.progress);
   const statusLine =
-    project.status === "preparing"
-      ? "Preparing your project..."
-      : `Created ${formatRelativeTime(project.createdAt)}`;
+    getProjectStatusLabel(project) ?? `Created ${formatRelativeTime(project.createdAt)}`;
 
   return (
     <View className="flex-row items-center gap-3 rounded-xl border border-n600 bg-n800 p-4">

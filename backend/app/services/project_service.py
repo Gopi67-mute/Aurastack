@@ -1,22 +1,41 @@
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
+from app.core.config import GENERATION_LEASE_SECONDS
 from app.repositories.activity_repository import ActivityRepository
 from app.repositories.learning_repository import LearningRepository
 from app.repositories.project_repository import ProjectRepository
-from app.schemas.project import Project, ProjectCreateRequest, ProjectUpdateRequest
-from app.services.curriculum_service import generate_project_topics
+from app.schemas.project import Project, ProjectCreateRequest, ProjectStatus, ProjectUpdateRequest
 
 _UPDATE_FIELD_MAP = {
     "name": "name",
     "description": "description",
     "platforms": "platforms",
     "techStack": "tech_stack",
-    "status": "status",
     "progress": "progress",
     "iconKey": "icon_key",
 }
+
+GENERATION_LEASE = timedelta(seconds=GENERATION_LEASE_SECONDS)
+
+#: Creating a project claims its first generation attempt.
+INITIAL_GENERATION_ATTEMPT = 1
+
+
+@dataclass(frozen=True)
+class GenerationClaim:
+    """The exclusive right to run one generation attempt of one project.
+
+    `attempt` is the fencing token checked when the result is persisted, and
+    doubles as the curriculum version that attempt writes: attempts only ever
+    increase, so versions are unique and monotonic per project.
+    """
+
+    user_id: str
+    project_id: str
+    attempt: int
 
 
 class ProjectNotFoundError(Exception):
@@ -42,15 +61,24 @@ class ProjectService:
 
     async def list_projects(self, user_id: str) -> list[Project]:
         docs = await self._projects.list_for_user(user_id)
-        return [_project_from_doc(doc) for doc in docs]
+        now = datetime.now(timezone.utc)
+        return [project_from_doc(doc, now) for doc in docs]
 
     async def get_project(self, user_id: str, project_id: str) -> Project:
         doc = await self._projects.get_by_id_for_user(project_id, user_id)
         if doc is None:
             raise ProjectNotFoundError(project_id)
-        return _project_from_doc(doc)
+        return project_from_doc(doc)
 
-    async def create_project(self, user_id: str, payload: ProjectCreateRequest) -> Project:
+    async def create_project(
+        self, user_id: str, payload: ProjectCreateRequest
+    ) -> tuple[Project, GenerationClaim]:
+        """Persist a new project and claim its first generation attempt.
+
+        Returns immediately with the project still "generating"; the caller
+        runs the returned claim through GenerationService in the background.
+        """
+
         project_id = str(uuid4())
         now = datetime.now(timezone.utc).isoformat()
 
@@ -61,25 +89,27 @@ class ProjectService:
             "description": payload.description,
             "platforms": payload.platforms,
             "tech_stack": None,
-            "status": "preparing",
+            "status": "generating",
             "progress": 0,
             "icon_key": None,
+            "generation": {
+                "attempt": INITIAL_GENERATION_ATTEMPT,
+                "started_at": now,
+                "completed_at": None,
+                "failure_reason": None,
+            },
+            # Null until a generation succeeds. Its presence also marks the
+            # document as post-Phase 3.3 for the startup migration.
+            "curriculum": None,
             "created_at": now,
             "updated_at": now,
         }
         await self._projects.insert(doc)
 
-        topics = generate_project_topics(
-            project_id=project_id,
-            project_name=payload.title,
-            tech_stack=None,
-            platforms=payload.platforms,
-            description=payload.description,
+        claim = GenerationClaim(
+            user_id=user_id, project_id=project_id, attempt=INITIAL_GENERATION_ATTEMPT
         )
-        topic_docs = [{**topic, "created_at": now} for topic in topics]
-        await self._learning.insert_topics(topic_docs)
-
-        return _project_from_doc(doc)
+        return project_from_doc(doc), claim
 
     async def update_project(
         self, user_id: str, project_id: str, payload: ProjectUpdateRequest
@@ -92,13 +122,13 @@ class ProjectService:
         updates = {_UPDATE_FIELD_MAP[field]: value for field, value in changes.items()}
 
         if not updates:
-            return _project_from_doc(existing)
+            return project_from_doc(existing)
 
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
         doc = await self._projects.update(project_id, user_id, updates)
         if doc is None:
             raise ProjectNotFoundError(project_id)
-        return _project_from_doc(doc)
+        return project_from_doc(doc)
 
     async def delete_project(self, user_id: str, project_id: str) -> None:
         deleted = await self._projects.delete(project_id, user_id)
@@ -108,11 +138,31 @@ class ProjectService:
         await self._activity.delete_for_project(project_id)
 
 
-def _project_from_doc(doc: dict[str, Any]) -> Project:
+def is_generation_expired(doc: dict[str, Any], now: datetime) -> bool:
+    """True when a "generating" project has outlived its lease.
+
+    Its worker is presumed dead (crash, restart, lost task), so the project
+    is reported as failed and may be retried. Mirrors the retry claim's
+    filter in ProjectRepository.claim_generation.
+    """
+
+    if doc.get("status") != "generating":
+        return False
+    started_at = (doc.get("generation") or {}).get("started_at")
+    if started_at is None:
+        return False
+    return datetime.fromisoformat(started_at) < now - GENERATION_LEASE
+
+
+def effective_status(doc: dict[str, Any], now: datetime) -> ProjectStatus:
+    return "failed" if is_generation_expired(doc, now) else doc["status"]
+
+
+def project_from_doc(doc: dict[str, Any], now: datetime | None = None) -> Project:
     return Project(
         id=doc["id"],
         name=doc["name"],
-        status=doc["status"],
+        status=effective_status(doc, now or datetime.now(timezone.utc)),
         progress=doc["progress"],
         createdAt=doc["created_at"],
         description=doc.get("description"),

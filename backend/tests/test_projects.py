@@ -1,7 +1,9 @@
+from uuid import UUID
+
 from fastapi.testclient import TestClient
 
 
-def test_create_project_persists_and_generates_curriculum(client: TestClient) -> None:
+def test_create_project_responds_generating_then_generates_curriculum(client: TestClient) -> None:
     response = client.post(
         "/api/v1/projects",
         json={"title": "Grocery Tracker", "description": "A mobile app to track groceries", "platforms": ["android", "ios"]},
@@ -12,17 +14,23 @@ def test_create_project_persists_and_generates_curriculum(client: TestClient) ->
 
     project = body["data"]
     assert project["name"] == "Grocery Tracker"
-    assert project["status"] == "preparing"
+    # The response is sent before generation runs.
+    assert project["status"] == "generating"
     assert project["progress"] == 0
     assert project["id"]
     assert project["createdAt"]
 
+    # TestClient has run the background generation by now.
+    assert client.get(f"/api/v1/projects/{project['id']}").json()["data"]["status"] == "ready"
+
     learning = client.get(f"/api/v1/projects/{project['id']}/learning")
     topics = learning.json()["data"]["topics"]
-    topic_ids = {topic["id"] for topic in topics}
-    assert "architecture-planning" in topic_ids
-    assert "react-fundamentals" in topic_ids
+    titles = {topic["title"] for topic in topics}
+    assert "Planning your architecture" in titles
+    assert "React fundamentals" in titles
     assert all(topic["status"] == "not_started" for topic in topics)
+    for topic in topics:
+        UUID(topic["id"])  # Server-assigned, never the library key.
 
 
 def test_create_project_rejects_empty_platforms(client: TestClient) -> None:
@@ -59,12 +67,24 @@ def test_update_project_only_changes_supplied_fields(client: TestClient) -> None
     created = client.post("/api/v1/projects", json={"title": "A", "description": "d", "platforms": ["web"]})
     project_id = created.json()["data"]["id"]
 
-    response = client.patch(f"/api/v1/projects/{project_id}", json={"status": "ready", "progress": 50})
+    response = client.patch(f"/api/v1/projects/{project_id}", json={"progress": 50})
     assert response.status_code == 200
     updated = response.json()["data"]
-    assert updated["status"] == "ready"
     assert updated["progress"] == 50
     assert updated["name"] == "A"
+
+
+def test_update_project_cannot_change_lifecycle_status(
+    client: TestClient, repos: dict[str, object]
+) -> None:
+    created = client.post("/api/v1/projects", json={"title": "A", "description": "d", "platforms": ["web"]})
+    project_id = created.json()["data"]["id"]
+    repos["project"]._docs[project_id]["status"] = "failed"
+
+    response = client.patch(f"/api/v1/projects/{project_id}", json={"status": "ready"})
+
+    assert response.status_code == 422
+    assert repos["project"]._docs[project_id]["status"] == "failed"
 
 
 def test_update_project_not_owned_returns_404(client: TestClient) -> None:
@@ -73,7 +93,7 @@ def test_update_project_not_owned_returns_404(client: TestClient) -> None:
 
     response = client.patch(
         f"/api/v1/projects/{project_id}",
-        json={"status": "ready"},
+        json={"name": "Taken over"},
         headers={"x-test-user-id": "user-b"},
     )
     assert response.status_code == 404

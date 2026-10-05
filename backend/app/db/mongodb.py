@@ -19,7 +19,10 @@ async def connect_to_mongo() -> None:
     await _state.db.projects.create_index([("id", 1)], unique=True)
     await _state.db.projects.create_index([("user_id", 1), ("created_at", -1)])
     await _state.db.learning_topics.create_index([("project_id", 1), ("id", 1)], unique=True)
-    await _state.db.learning_topics.create_index([("project_id", 1), ("order", 1)])
+    # Active-curriculum reads: one project's topics of one version, in order.
+    await _state.db.learning_topics.create_index(
+        [("project_id", 1), ("curriculum_version", 1), ("order", 1)]
+    )
     await _state.db.learning_progress.create_index(
         [("user_id", 1), ("project_id", 1), ("topic_id", 1)], unique=True
     )

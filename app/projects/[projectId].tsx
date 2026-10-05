@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ErrorState } from "../../components/ErrorState";
 import { LoadingState } from "../../components/LoadingState";
+import { GenerationFailedCard } from "../../features/project-workspace/components/GenerationFailedCard";
 import { ProjectNotFound } from "../../features/project-workspace/components/ProjectNotFound";
 import { ProjectSummaryCard } from "../../features/project-workspace/components/ProjectSummaryCard";
 import { WorkspaceHeader } from "../../features/project-workspace/components/WorkspaceHeader";
@@ -56,6 +57,7 @@ export default function ProjectWorkspace() {
         showsVerticalScrollIndicator={false}
       >
         <ProjectSummaryCard project={project} />
+        {project.status === "failed" ? <GenerationFailedCard projectId={project.id} /> : null}
         <WorkspaceTabs active={section} onChange={setSection} />
         <WorkspaceSectionPanel project={project} section={section} />
       </ScrollView>

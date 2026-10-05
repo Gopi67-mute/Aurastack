@@ -17,7 +17,9 @@ const mockGetProjects = jest.mocked(getProjects);
 const PROJECT: Project = {
   id: "project-1",
   name: "Storefront",
-  status: "preparing",
+  // Not "generating": that would start generation polling, which
+  // store/useProjectStore.test.ts covers separately.
+  status: "ready",
   progress: 0,
   createdAt: "2026-10-01T00:00:00.000Z",
 };
@@ -31,6 +33,7 @@ async function settle(): Promise<void> {
 
 beforeEach(() => {
   mockGetProjects.mockReset();
+  useProjectStore.getState().stopGenerationPolling();
   useProjectStore.setState({ projects: [], status: "idle", error: null });
 });
 

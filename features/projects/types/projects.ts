@@ -3,10 +3,12 @@ import type { ProjectPlatform } from "../../create-project/types/createProject";
 export type ProjectIconKey = "commerce" | "chat" | "web";
 
 /**
- * "preparing": created by the user, not yet AI-generated (no stack/roadmap).
- * "ready": has a generated blueprint (all current mock projects).
+ * Server-owned generation lifecycle; the client only ever reads it.
+ * "generating": created, curriculum still being generated.
+ * "ready": generated; its learning curriculum exists.
+ * "failed": generation failed or stalled; can be retried.
  */
-export type ProjectStatus = "preparing" | "ready";
+export type ProjectStatus = "generating" | "ready" | "failed";
 
 /** Client-side project summary; the Projects API will return this shape. */
 export interface Project {

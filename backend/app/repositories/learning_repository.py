@@ -4,7 +4,11 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 
 class LearningRepository:
-    """Reads and writes the topic catalog and per-user progress collections."""
+    """Reads and writes the topic catalog and per-user progress collections.
+
+    Topic reads are always scoped to one curriculum version, so documents from
+    a failed or superseded generation attempt are never returned.
+    """
 
     def __init__(self, db: AsyncIOMotorDatabase) -> None:
         self._topics = db.learning_topics
@@ -14,18 +18,56 @@ class LearningRepository:
         if topics:
             await self._topics.insert_many(topics)
 
-    async def list_topics(self, project_id: str) -> list[dict[str, Any]]:
-        cursor = self._topics.find({"project_id": project_id}).sort("order", 1)
+    async def list_topics(self, project_id: str, curriculum_version: int) -> list[dict[str, Any]]:
+        cursor = self._topics.find(
+            {"project_id": project_id, "curriculum_version": curriculum_version}
+        ).sort("order", 1)
         return [doc async for doc in cursor]
 
-    async def list_topics_for_projects(self, project_ids: list[str]) -> list[dict[str, Any]]:
-        if not project_ids:
+    async def list_topics_for_projects(
+        self, curriculum_versions: dict[str, int]
+    ) -> list[dict[str, Any]]:
+        """Topics of each project's given curriculum version, keyed project id -> version."""
+
+        if not curriculum_versions:
             return []
-        cursor = self._topics.find({"project_id": {"$in": project_ids}}).sort("order", 1)
+        cursor = self._topics.find(
+            {
+                "$or": [
+                    {"project_id": project_id, "curriculum_version": version}
+                    for project_id, version in curriculum_versions.items()
+                ]
+            }
+        ).sort("order", 1)
         return [doc async for doc in cursor]
 
-    async def get_topic(self, project_id: str, topic_id: str) -> dict[str, Any] | None:
-        return await self._topics.find_one({"project_id": project_id, "id": topic_id})
+    async def get_topic(
+        self, project_id: str, curriculum_version: int, topic_id: str
+    ) -> dict[str, Any] | None:
+        return await self._topics.find_one(
+            {"project_id": project_id, "curriculum_version": curriculum_version, "id": topic_id}
+        )
+
+    async def has_topics(self, project_id: str) -> bool:
+        return await self._topics.find_one({"project_id": project_id}, {"_id": 1}) is not None
+
+    async def set_missing_curriculum_version(self, project_id: str, curriculum_version: int) -> None:
+        """Stamp topics that predate curriculum versioning. Leaves ids untouched."""
+
+        await self._topics.update_many(
+            {"project_id": project_id, "curriculum_version": {"$exists": False}},
+            {"$set": {"curriculum_version": curriculum_version}},
+        )
+
+    async def delete_topics_for_version(self, project_id: str, curriculum_version: int) -> None:
+        await self._topics.delete_many(
+            {"project_id": project_id, "curriculum_version": curriculum_version}
+        )
+
+    async def delete_topics_except_version(self, project_id: str, curriculum_version: int) -> None:
+        await self._topics.delete_many(
+            {"project_id": project_id, "curriculum_version": {"$ne": curriculum_version}}
+        )
 
     async def list_progress_for_project(self, user_id: str, project_id: str) -> dict[str, dict[str, Any]]:
         cursor = self._progress.find({"user_id": user_id, "project_id": project_id})

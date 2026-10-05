@@ -1,14 +1,13 @@
-"""Curriculum generation.
+"""The keyword-based topic library behind the deterministic AI provider.
 
 Python port of features/learning/constants/topicLibrary.ts and
 features/learning/services/generateProjectTopics.ts, so a project created via
 the API gets the same curriculum a locally-created mock project would have
-gotten. Deterministic: same project in, same topic ids/order out, so
-persisted progress keeps matching topic ids across requests.
+gotten. Deterministic: same project in, same topic keys/order out.
 
-V1 placeholder for AI-generated learning content, same as the frontend
-original. Replace with real AI generation in a later phase; only this module
-and its dict shape need to change, callers are unaffected.
+Produces provider-shaped output (app.ai.schemas.CurriculumTopicOutput), not
+persisted documents: the library `key` is provenance only, and the server
+assigns each persisted topic its own id during normalisation.
 """
 
 from collections.abc import Callable
@@ -233,15 +232,14 @@ def _describe_project(
 
 
 def generate_project_topics(
-    project_id: str,
     project_name: str,
     tech_stack: list[str] | None,
     platforms: list[str] | None,
     description: str | None,
 ) -> list[dict]:
-    """Builds an ordered, not-yet-started curriculum from the project's stack,
-    platforms and idea. Pure and deterministic: same inputs always produce the
-    same topic ids and order.
+    """Builds an ordered curriculum from the project's stack, platforms and
+    idea. Pure and deterministic: same inputs always produce the same topic
+    keys and order.
     """
 
     haystack = _describe_project(tech_stack, platforms, description)
@@ -257,8 +255,7 @@ def generate_project_topics(
         content = entry.content(project_name)
         topics.append(
             {
-                "id": entry.id,
-                "project_id": project_id,
+                "key": entry.id,
                 "title": entry.title,
                 "description": content["what"],
                 "order": index + 1,
