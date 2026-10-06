@@ -5,10 +5,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.v1.router import router as api_v1_router
+from app.core.logging_config import configure_logging
 from app.db.migrations import migrate_generation_lifecycle
 from app.db.mongodb import close_mongo_connection, connect_to_mongo, get_database
 from app.repositories.learning_repository import LearningRepository
 from app.repositories.project_repository import ProjectRepository
+
+configure_logging()
 
 
 @asynccontextmanager

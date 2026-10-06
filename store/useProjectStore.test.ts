@@ -1,9 +1,10 @@
 import { getProjects } from "../features/projects/services/getProjects";
 import { retryProjectGeneration } from "../features/projects/services/retryProjectGeneration";
 import type { Project, ProjectStatus } from "../features/projects/types/projects";
-import { ApiError } from "../lib/api";
+import { ApiError, REQUEST_TIMEOUT_MS } from "../lib/api";
 import { useLearningStore } from "./useLearningStore";
 import {
+  GENERATION_LEASE_MS,
   GENERATION_POLL_INTERVAL_MS,
   GENERATION_POLL_MAX_MS,
   useProjectStore,
@@ -22,6 +23,18 @@ const getToken = () => Promise.resolve("test-token");
 function project(id: string, status: ProjectStatus): Project {
   return { id, name: id, status, progress: 0, createdAt: "2026-10-01T00:00:00.000Z" };
 }
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+const ids = () => useProjectStore.getState().projects.map((candidate) => candidate.id);
+const statusOf = (id: string) =>
+  useProjectStore.getState().projects.find((candidate) => candidate.id === id)?.status;
 
 /** Runs the next poll tick, including the request it makes. */
 async function tick(times = 1): Promise<void> {
@@ -169,6 +182,97 @@ describe("useProjectStore generation polling", () => {
     await tick();
 
     expect(mockGetProjects).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useProjectStore polling deadline", () => {
+  it("outlasts the server lease by at least one poll interval and one request timeout", () => {
+    expect(GENERATION_POLL_MAX_MS).toBeGreaterThanOrEqual(
+      GENERATION_LEASE_MS + GENERATION_POLL_INTERVAL_MS + REQUEST_TIMEOUT_MS,
+    );
+  });
+
+  it("keeps polling past the lease until the server reports the stalled generation as failed", async () => {
+    const start = Date.now();
+    // The worker was lost: the server keeps reporting "generating" until its
+    // lease has expired, then reports the project as failed.
+    mockGetProjects.mockImplementation(async () => [
+      project("a", Date.now() - start >= GENERATION_LEASE_MS + 1_000 ? "failed" : "generating"),
+    ]);
+
+    await useProjectStore.getState().load(getToken);
+    await jest.advanceTimersByTimeAsync(GENERATION_LEASE_MS);
+    expect(statusOf("a")).toBe("generating");
+    const callsAtLease = mockGetProjects.mock.calls.length;
+
+    await jest.advanceTimersByTimeAsync(GENERATION_LEASE_MS / 120); // t = 121s
+    await tick();
+    expect(mockGetProjects.mock.calls.length).toBeGreaterThan(callsAtLease);
+    expect(statusOf("a")).toBe("failed");
+
+    const callsAtFailure = mockGetProjects.mock.calls.length;
+    await tick(10);
+    expect(mockGetProjects).toHaveBeenCalledTimes(callsAtFailure);
+  });
+});
+
+describe("useProjectStore stale responses", () => {
+  it("does not let a poll that started before addProject drop the new project", async () => {
+    const stalePoll = deferred<Project[]>();
+    mockGetProjects
+      .mockResolvedValueOnce([project("a", "generating")])
+      .mockReturnValueOnce(stalePoll.promise)
+      .mockResolvedValue([project("new", "generating"), project("a", "generating")]);
+    await useProjectStore.getState().load(getToken);
+    await tick(); // The poll is now in flight.
+
+    useProjectStore.getState().addProject(project("new", "generating"), getToken);
+    stalePoll.resolve([project("a", "generating")]);
+    await jest.advanceTimersByTimeAsync(0);
+
+    expect(ids()).toEqual(["new", "a"]);
+
+    // Polling carries on, and the next read is applied.
+    await tick();
+    expect(mockGetProjects).toHaveBeenCalledTimes(3);
+    expect(ids()).toEqual(["new", "a"]);
+  });
+
+  it("does not let a poll that started before a retry regress the retried project", async () => {
+    const stalePoll = deferred<Project[]>();
+    mockGetProjects
+      .mockResolvedValueOnce([project("a", "generating"), project("b", "failed")])
+      .mockReturnValueOnce(stalePoll.promise)
+      .mockResolvedValue([project("a", "generating"), project("b", "ready")]);
+    mockRetry.mockResolvedValueOnce(project("b", "generating"));
+    await useProjectStore.getState().load(getToken);
+    await tick(); // The poll is now in flight.
+
+    await useProjectStore.getState().retryGeneration("b", getToken);
+    stalePoll.resolve([project("a", "generating"), project("b", "failed")]);
+    await jest.advanceTimersByTimeAsync(0);
+
+    expect(statusOf("b")).toBe("generating");
+
+    await tick();
+    expect(mockGetProjects).toHaveBeenCalledTimes(3);
+    expect(statusOf("b")).toBe("ready");
+  });
+
+  it("re-reads when a project is added while the list is loading", async () => {
+    const staleLoad = deferred<Project[]>();
+    mockGetProjects
+      .mockReturnValueOnce(staleLoad.promise)
+      .mockResolvedValueOnce([project("new", "generating"), project("old", "ready")]);
+
+    const loading = useProjectStore.getState().load(getToken);
+    useProjectStore.getState().addProject(project("new", "generating"), getToken);
+    staleLoad.resolve([project("old", "ready")]);
+    await loading;
+
+    expect(mockGetProjects).toHaveBeenCalledTimes(2);
+    expect(ids()).toEqual(["new", "old"]);
+    expect(useProjectStore.getState().status).toBe("ready");
   });
 });
 

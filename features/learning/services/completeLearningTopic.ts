@@ -17,7 +17,7 @@ export async function completeLearningTopic(
   getToken: GetToken,
 ): Promise<LearningTopic> {
   return api.post<LearningTopic>(
-    `/api/v1/projects/${projectId}/learning/${topicId}/complete`,
+    `/api/v1/projects/${encodeURIComponent(projectId)}/learning/${encodeURIComponent(topicId)}/complete`,
     getToken,
   );
 }

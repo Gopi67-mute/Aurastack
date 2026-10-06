@@ -7,7 +7,11 @@ import { ProgressBar } from "../../home/components/ProgressBar";
 import { formatRelativeTime } from "../../home/utils/formatRelativeTime";
 import { clampProgress } from "../../home/utils/getAuraMessage";
 import type { Project } from "../types/projects";
-import { getProjectCaption, getProjectSubtitle } from "../utils/projectDisplay";
+import {
+  getProjectAccessibilityStatus,
+  getProjectCaption,
+  getProjectSubtitle,
+} from "../utils/projectDisplay";
 
 interface ProjectListCardProps {
   project: Project;
@@ -23,7 +27,7 @@ export function ProjectListCard({ project, onPress }: ProjectListCardProps) {
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${project.name}, ${percent}% complete, created ${createdLabel}`}
+      accessibilityLabel={`${project.name}, ${getProjectAccessibilityStatus(project)}, ${percent}% complete, created ${createdLabel}`}
       className="flex-row items-center gap-3 rounded-xl border border-n600 bg-n800 p-3 active:opacity-80"
     >
       <View className="h-14 w-14 items-center justify-center rounded-lg bg-aura-purple/15">

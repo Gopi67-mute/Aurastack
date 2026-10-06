@@ -7,6 +7,12 @@ The provider's output is untrusted until it passes CurriculumOutputV1. The
 server, never the provider, assigns persisted topic ids. Every write that
 makes a curriculum active is fenced on the claimed attempt, so a stale or
 superseded run can never overwrite a newer one.
+
+Lost workers: an attempt runs in a FastAPI BackgroundTask, in memory. A
+process restart, crash or `--reload` mid-generation loses it silently and
+nothing resumes it. The project stays "generating" in MongoDB until its lease
+(GENERATION_LEASE_SECONDS) expires; from then on reads report it "failed" and
+the user can retry. This is deliberate: there is no queue or worker process.
 """
 
 import asyncio
@@ -27,6 +33,7 @@ from app.services.project_service import (
     GenerationClaim,
     ProjectNotFoundError,
     effective_status,
+    log_generation_claim,
     project_from_doc,
 )
 
@@ -92,8 +99,12 @@ class GenerationService:
             raise GenerationConflictError(project_id, effective_status(existing, now))
 
         claim = GenerationClaim(
-            user_id=user_id, project_id=project_id, attempt=doc["generation"]["attempt"]
+            user_id=user_id,
+            project_id=project_id,
+            attempt=doc["generation"]["attempt"],
+            trigger="retry",
         )
+        log_generation_claim(claim)
         return project_from_doc(doc, now), claim
 
     async def run(self, claim: GenerationClaim) -> None:
@@ -108,24 +119,27 @@ class GenerationService:
         try:
             outcome = await self._generate(claim)
         except _GenerationFailure as failure:
-            outcome = failure.reason
-            await self._record_failure(claim, failure.reason)
+            outcome = await self._record_failure(claim, failure.reason)
         except Exception:
-            outcome = FAILURE_INTERNAL_ERROR
             logger.exception(
                 "Generation crashed: user_id=%s project_id=%s attempt=%s",
                 claim.user_id,
                 claim.project_id,
                 claim.attempt,
             )
-            await self._record_failure(claim, FAILURE_INTERNAL_ERROR)
+            outcome = await self._record_failure(claim, FAILURE_INTERNAL_ERROR)
 
+        # Ids, codes and timings only: never prompts, provider output or
+        # project text, which may contain anything the user typed.
         logger.info(
-            "Generation finished: user_id=%s project_id=%s attempt=%s provider=%s outcome=%s duration_ms=%d",
+            "Generation finished: trigger=%s user_id=%s project_id=%s attempt=%s provider=%s "
+            "model=%s outcome=%s duration_ms=%d",
+            claim.trigger,
             claim.user_id,
             claim.project_id,
             claim.attempt,
             self._provider.name,
+            self._provider.model,
             outcome,
             (time.monotonic() - started) * 1000,
         )
@@ -171,11 +185,7 @@ class GenerationService:
             await self._discard_topics(claim)
             return "superseded"
 
-        await self._best_effort(
-            self._learning.delete_topics_except_version(claim.project_id, claim.attempt),
-            claim,
-            "superseded topic cleanup",
-        )
+        await self._delete_superseded_topics(claim)
         return "ready"
 
     async def _produce_curriculum(
@@ -216,7 +226,16 @@ class GenerationService:
             )
             raise _GenerationFailure(FAILURE_INVALID_OUTPUT) from exc
 
-    async def _record_failure(self, claim: GenerationClaim, reason: str) -> None:
+    async def _record_failure(self, claim: GenerationClaim, reason: str) -> str:
+        """Mark the attempt failed and discard its topics. Returns the outcome.
+
+        Usually `reason`. But "failed" can be a wrong belief: the "ready"
+        finalise may have applied in MongoDB and still raised here (e.g. the
+        connection dropped before the reply). The fenced write below then
+        matches nothing, the attempt's topics are the active curriculum, and
+        they are kept: the outcome is "ready".
+        """
+
         now = datetime.now(timezone.utc).isoformat()
         await self._best_effort(
             self._projects.finalize_generation(
@@ -233,13 +252,53 @@ class GenerationService:
             claim,
             "failure recording",
         )
-        await self._discard_topics(claim)
+        if await self._discard_topics(claim):
+            await self._delete_superseded_topics(claim)
+            return "ready"
+        return reason
 
-    async def _discard_topics(self, claim: GenerationClaim) -> None:
+    async def _discard_topics(self, claim: GenerationClaim) -> bool:
+        """Delete the attempt's topics unless they are the active curriculum.
+
+        Callers believe the attempt was not activated, which an ambiguous
+        finalise can make wrong, so the project is re-read first. Returns True
+        when the attempt is in fact active and its topics were kept. When the
+        project cannot be read, the topics are kept too: a curriculum version
+        that is not active is never read, and the next successful attempt
+        deletes it, whereas deleting an active one empties a ready project.
+        """
+
+        try:
+            doc = await self._projects.get_by_id_for_user(claim.project_id, claim.user_id)
+        except Exception:
+            logger.exception(
+                "Generation topic cleanup skipped, project unreadable: project_id=%s attempt=%s",
+                claim.project_id,
+                claim.attempt,
+            )
+            return False
+
+        if doc is not None and (doc.get("curriculum") or {}).get("version") == claim.attempt:
+            logger.warning(
+                "Generation finalize was ambiguous but the attempt is active; curriculum kept: "
+                "project_id=%s attempt=%s",
+                claim.project_id,
+                claim.attempt,
+            )
+            return True
+
         await self._best_effort(
             self._learning.delete_topics_for_version(claim.project_id, claim.attempt),
             claim,
             "topic cleanup",
+        )
+        return False
+
+    async def _delete_superseded_topics(self, claim: GenerationClaim) -> None:
+        await self._best_effort(
+            self._learning.delete_topics_except_version(claim.project_id, claim.attempt),
+            claim,
+            "superseded topic cleanup",
         )
 
     async def _best_effort(

@@ -25,6 +25,13 @@ In the output, you'll find options to open the app in a
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
+## Backend: curriculum generation operations
+
+- **Generation runs in-process.** Each project's learning plan is generated in a FastAPI `BackgroundTask`. A backend restart, crash or `--reload` during generation loses that task, and nothing resumes it. The project keeps reading "generating" until its 120-second lease expires, then reads "failed", and the user can press **Try again**. The app keeps polling for 150 seconds, longer than the lease, so it picks up that "failed" state on its own.
+- **Logs.** The backend logs one `Generation claimed` line (`trigger=create` or `trigger=retry`) and one `Generation finished` line per attempt. These lines contain ids, provider, model, outcome and `duration_ms` only. They never include prompts, project text, provider responses or keys.
+- **Deploying over pre-Phase 3.3 data.** The legacy-status migration runs at startup. Retire every instance running older code before or as the new version starts: an old instance can keep writing legacy documents. Restarting the new version migrates any it wrote in the meantime.
+- **Live database checks (opt-in).** Run `MONGO_LIVE_TEST=1 pytest tests/test_mongo_generation_live.py` from `backend/`. The test uses a uniquely named temporary database and drops it afterwards. It never reads or writes application data.
+
 ## Get a fresh project
 
 When you're ready, run:

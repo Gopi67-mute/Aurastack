@@ -14,6 +14,8 @@ interface MomentumStoreState {
   error: string | null;
   /** Fetches once per session; `force` refetches after recording activity. */
   load: (getToken: GetToken, force?: boolean) => Promise<void>;
+  /** Forgets the signed-out user's momentum and drops a response still in flight. */
+  reset: () => void;
 }
 
 /**
@@ -21,18 +23,30 @@ interface MomentumStoreState {
  * Progress. The streak is never derived here — completing a topic refetches
  * this so the UI shows exactly what the backend calculated.
  */
-export const useMomentumStore = create<MomentumStoreState>()((set, get) => ({
-  momentum: null,
-  status: "idle",
-  error: null,
+export const useMomentumStore = create<MomentumStoreState>()((set, get) => {
+  /** Bumped by reset(); a load started for the previous user is dropped. */
+  let session = 0;
 
-  load: async (getToken, force = false) => {
-    if (!shouldLoad(get().status, force)) return;
-    set({ status: "loading", error: null });
-    try {
-      set({ momentum: await getMomentum(getToken), status: "ready", error: null });
-    } catch (err) {
-      set({ status: "error", error: toErrorMessage(err, LOAD_ERROR) });
-    }
-  },
-}));
+  return {
+    momentum: null,
+    status: "idle",
+    error: null,
+
+    load: async (getToken, force = false) => {
+      if (!shouldLoad(get().status, force)) return;
+      const startedIn = session;
+      set({ status: "loading", error: null });
+      try {
+        const momentum = await getMomentum(getToken);
+        if (session === startedIn) set({ momentum, status: "ready", error: null });
+      } catch (err) {
+        if (session === startedIn) set({ status: "error", error: toErrorMessage(err, LOAD_ERROR) });
+      }
+    },
+
+    reset: () => {
+      session += 1;
+      set({ momentum: null, status: "idle", error: null });
+    },
+  };
+});

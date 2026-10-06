@@ -1,5 +1,9 @@
 import type { Project, ProjectStatus } from "../types/projects";
-import { getProjectCaption, getProjectStatusLabel } from "./projectDisplay";
+import {
+  getProjectAccessibilityStatus,
+  getProjectCaption,
+  getProjectStatusLabel,
+} from "./projectDisplay";
 
 // The real module also exports lucide icons, whose ESM build Jest does not
 // transform; only the labels are needed here.
@@ -24,5 +28,11 @@ describe("project lifecycle display", () => {
     );
     expect(getProjectCaption(project("failed"), "today")).toBe("Created today · Generation failed");
     expect(getProjectCaption(project("ready"), "today")).toBe("Created today");
+  });
+
+  it("names every status for screen readers, including ready", () => {
+    expect(getProjectAccessibilityStatus(project("generating"))).toBe("Generating");
+    expect(getProjectAccessibilityStatus(project("ready"))).toBe("Ready");
+    expect(getProjectAccessibilityStatus(project("failed"))).toBe("Generation failed");
   });
 });

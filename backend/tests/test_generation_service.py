@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
@@ -278,6 +279,183 @@ async def test_persistence_error_fails_and_discards_partial_topics() -> None:
     await harness.generation.run(claim)
 
     _assert_failed(harness, claim, FAILURE_INTERNAL_ERROR)
+
+
+@pytest.mark.asyncio
+async def test_project_deleted_between_topic_insert_and_finalize_leaves_nothing() -> None:
+    harness = Harness()
+    claim = await harness.create()
+    original_insert = harness.learning.insert_topics
+
+    async def insert_racing_delete(topics: list[dict[str, Any]]) -> None:
+        # The user deletes the project while the worker's insert is in flight;
+        # the topics land after the delete's own cleanup already ran.
+        await harness.project_service.delete_project(USER, claim.project_id)
+        await original_insert(topics)
+        assert harness.learning.all_topics(claim.project_id)
+
+    harness.learning.insert_topics = insert_racing_delete  # type: ignore[method-assign]
+
+    await harness.generation.run(claim)
+
+    assert claim.project_id not in harness.projects._docs
+    assert harness.learning.all_topics(claim.project_id) == []
+
+
+# --- ambiguous finalize -----------------------------------------------------
+
+
+def _finalize_applies_then_raises(harness: Harness) -> None:
+    """The first finalize is applied in the database, then the reply is lost."""
+
+    original = harness.projects.finalize_generation
+    calls = 0
+
+    async def finalize(*args: Any, **kwargs: Any) -> bool:
+        nonlocal calls
+        calls += 1
+        applied = await original(*args, **kwargs)
+        if calls == 1:
+            raise ConnectionError("connection reset after the write was applied")
+        return applied
+
+    harness.projects.finalize_generation = finalize  # type: ignore[method-assign]
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_finalize_keeps_the_active_curriculum() -> None:
+    harness = Harness()
+    claim = await harness.create()
+    _finalize_applies_then_raises(harness)
+
+    await harness.generation.run(claim)
+
+    doc = harness.doc(claim.project_id)
+    assert doc["status"] == "ready"
+    assert doc["curriculum"]["version"] == claim.attempt
+    assert doc["generation"]["failure_reason"] is None
+    learning = await harness.learning_service.get_project_learning(USER, claim.project_id)
+    assert len(learning.topics) > 0
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_finalize_after_a_retry_still_removes_older_versions() -> None:
+    harness = Harness(BrokenProvider())
+    first = await harness.create()
+    await harness.generation.run(first)
+    leftover = {
+        "id": "leftover-topic",
+        "project_id": first.project_id,
+        "curriculum_version": first.attempt,
+        "source_key": None,
+        "title": "Left by attempt 1",
+        "description": "d",
+        "order": 1,
+        "content": CONTENT,
+        "created_at": _ago(timedelta(0)),
+    }
+    await harness.learning.insert_topics([leftover])
+    _, retry = await harness.generation.claim_retry(USER, first.project_id)
+    harness.generation._provider = DeterministicProvider()
+    _finalize_applies_then_raises(harness)
+
+    await harness.generation.run(retry)
+
+    versions = {topic["curriculum_version"] for topic in harness.learning.all_topics(first.project_id)}
+    assert versions == {retry.attempt}
+    assert harness.doc(first.project_id)["status"] == "ready"
+
+
+@pytest.mark.asyncio
+async def test_finalize_that_raises_without_applying_still_fails_cleanly() -> None:
+    harness = Harness()
+    claim = await harness.create()
+    original = harness.projects.finalize_generation
+    calls = 0
+
+    async def finalize(*args: Any, **kwargs: Any) -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ConnectionError("lost before the write reached the server")
+        return await original(*args, **kwargs)
+
+    harness.projects.finalize_generation = finalize  # type: ignore[method-assign]
+
+    await harness.generation.run(claim)
+
+    _assert_failed(harness, claim, FAILURE_INTERNAL_ERROR)
+
+
+@pytest.mark.asyncio
+async def test_topics_are_kept_when_the_project_cannot_be_reread() -> None:
+    harness = Harness()
+    claim = await harness.create()
+    original_finalize = harness.projects.finalize_generation
+    original_get = harness.projects.get_by_id_for_user
+    db_down = False
+
+    async def finalize(*args: Any, **kwargs: Any) -> bool:
+        nonlocal db_down
+        if db_down:
+            raise ConnectionError("db down")
+        await original_finalize(*args, **kwargs)
+        db_down = True  # The write applied; then the database became unreachable.
+        raise ConnectionError("connection reset after the write was applied")
+
+    async def get(*args: Any, **kwargs: Any) -> dict[str, Any] | None:
+        if db_down:
+            raise ConnectionError("db down")
+        return await original_get(*args, **kwargs)
+
+    harness.projects.finalize_generation = finalize  # type: ignore[method-assign]
+    harness.projects.get_by_id_for_user = get  # type: ignore[method-assign]
+
+    await harness.generation.run(claim)
+
+    assert harness.doc(claim.project_id)["status"] == "ready"
+    assert {topic["curriculum_version"] for topic in harness.learning.all_topics(claim.project_id)} == {
+        claim.attempt
+    }
+
+
+# --- logging ----------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_generation_logs_claims_and_outcomes_with_ids_only(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    harness = Harness(BrokenProvider())
+
+    with caplog.at_level(logging.INFO, logger="app"):
+        claim = await harness.create(title="Private Venture", description="confidential plan")
+        await harness.generation.run(claim)
+        _, retry = await harness.generation.claim_retry(USER, claim.project_id)
+        harness.generation._provider = StaticProvider(
+            _raw([{"title": "T", "description": "d", "order": 1, "content": CONTENT}])
+        )
+        await harness.generation.run(retry)
+
+    messages = [record.getMessage() for record in caplog.records]
+    claims = [message for message in messages if message.startswith("Generation claimed")]
+    finished = [message for message in messages if message.startswith("Generation finished")]
+    pid = claim.project_id
+    assert claims == [
+        f"Generation claimed: trigger=create user_id={USER} project_id={pid} attempt=1",
+        f"Generation claimed: trigger=retry user_id={USER} project_id={pid} attempt=2",
+    ]
+    assert len(finished) == 2
+    assert finished[0].startswith(
+        f"Generation finished: trigger=create user_id={USER} project_id={pid} attempt=1 "
+        f"provider=broken model=None outcome={FAILURE_PROVIDER_ERROR} duration_ms="
+    )
+    assert finished[1].startswith(
+        f"Generation finished: trigger=retry user_id={USER} project_id={pid} attempt=2 "
+        "provider=static model=static-model-1 outcome=ready duration_ms="
+    )
+    for text in ("Private Venture", "confidential plan", "Grocery Tracker"):
+        assert text not in caplog.text
 
 
 @pytest.mark.asyncio

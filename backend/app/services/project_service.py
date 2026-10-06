@@ -1,6 +1,7 @@
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from app.core.config import GENERATION_LEASE_SECONDS
@@ -18,10 +19,15 @@ _UPDATE_FIELD_MAP = {
     "iconKey": "icon_key",
 }
 
+logger = logging.getLogger(__name__)
+
 GENERATION_LEASE = timedelta(seconds=GENERATION_LEASE_SECONDS)
 
 #: Creating a project claims its first generation attempt.
 INITIAL_GENERATION_ATTEMPT = 1
+
+#: What claimed a generation attempt: project creation or a user retry.
+GenerationTrigger = Literal["create", "retry"]
 
 
 @dataclass(frozen=True)
@@ -36,6 +42,20 @@ class GenerationClaim:
     user_id: str
     project_id: str
     attempt: int
+    #: Observability only; never affects how the attempt runs.
+    trigger: GenerationTrigger
+
+
+def log_generation_claim(claim: GenerationClaim) -> None:
+    """One line per claimed attempt. Ids only: never project names or text."""
+
+    logger.info(
+        "Generation claimed: trigger=%s user_id=%s project_id=%s attempt=%s",
+        claim.trigger,
+        claim.user_id,
+        claim.project_id,
+        claim.attempt,
+    )
 
 
 class ProjectNotFoundError(Exception):
@@ -107,8 +127,12 @@ class ProjectService:
         await self._projects.insert(doc)
 
         claim = GenerationClaim(
-            user_id=user_id, project_id=project_id, attempt=INITIAL_GENERATION_ATTEMPT
+            user_id=user_id,
+            project_id=project_id,
+            attempt=INITIAL_GENERATION_ATTEMPT,
+            trigger="create",
         )
+        log_generation_claim(claim)
         return project_from_doc(doc), claim
 
     async def update_project(

@@ -13,11 +13,24 @@ const LOAD_ERROR = "Couldn't load your projects.";
 export const GENERATION_POLL_INTERVAL_MS = 3_000;
 
 /**
- * Polling stops after this long even if a project still reads "generating".
- * Matches the backend's generation lease, after which a stalled generation is
- * reported as failed anyway; a manual refresh resumes polling if needed.
+ * The backend's generation lease (GENERATION_LEASE_SECONDS in
+ * backend/app/core/config.py). A generation still running after this long is
+ * presumed dead, and from then on the server reports its project as failed.
  */
-export const GENERATION_POLL_MAX_MS = 120_000;
+export const GENERATION_LEASE_MS = 120_000;
+
+/**
+ * Polling stops after this long even if a project still reads "generating";
+ * a manual refresh resumes it if needed.
+ *
+ * It must exceed the lease. A generation whose worker was lost (e.g. a
+ * backend restart) never finishes, and only reads "failed" once the server's
+ * lease has expired. A client that gave up at the lease could take its last
+ * read just before that moment and then show "generating" indefinitely. The
+ * 30s margin covers the final poll interval plus one request running to its
+ * timeout (REQUEST_TIMEOUT_MS), with room for clock and network delay.
+ */
+export const GENERATION_POLL_MAX_MS = 150_000;
 
 interface ProjectStoreState {
   projects: readonly Project[];
@@ -34,6 +47,12 @@ interface ProjectStoreState {
    */
   retryGeneration: (projectId: string, getToken: GetToken) => Promise<void>;
   stopGenerationPolling: () => void;
+  /**
+   * Forgets the signed-out user's projects: stops polling, empties the list
+   * and drops every response still in flight, so the next user starts from a
+   * fresh load.
+   */
+  reset: () => void;
 }
 
 interface PollState {
@@ -58,18 +77,35 @@ function hasNewlyReadyProject(previous: readonly Project[], next: readonly Proje
  * state). When a project turns ready, learning is refreshed once to pick up
  * its new curriculum.
  *
+ * A list read that was already in flight when the list changed locally (a
+ * project created or retried) is stale: applying it would drop that change,
+ * so it is discarded and the next read, made after the change, is used.
+ *
  * Not persisted: the backend is the source of truth, and caching one user's
  * projects on the device would risk showing them after a different user signs
  * in. A previously fetched list is kept on a failed refetch so the UI can show
  * stale data alongside the error rather than emptying out.
  */
 export const useProjectStore = create<ProjectStoreState>()((set, get) => {
-  // Not store state: no screen renders from it, so changes must not re-render.
+  // Not store state: no screen renders from these, so changes must not re-render.
   let poll: PollState | null = null;
+  /** Bumped by every local change to the list; reads started earlier are stale. */
+  let localChanges = 0;
+  /** Bumped by reset(); anything started for the previous user is dropped. */
+  let session = 0;
 
   const stopPolling = () => {
     if (poll?.timer) clearTimeout(poll.timer);
     poll = null;
+  };
+
+  /** Reads the list; null when a local change or reset made the response stale. */
+  const fetchProjects = async (getToken: GetToken): Promise<readonly Project[] | null> => {
+    const startedAt = { localChanges, session };
+    const projects = await getProjects(getToken);
+    return startedAt.localChanges === localChanges && startedAt.session === session
+      ? projects
+      : null;
   };
 
   /** Stores a project list from the backend and reacts to lifecycle changes in it. */
@@ -97,7 +133,9 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
     current.timer = setTimeout(async () => {
       current.timer = null;
       try {
-        receive(await getProjects(getToken), getToken);
+        const projects = await fetchProjects(getToken);
+        // A stale read is skipped; the next tick reads again.
+        if (projects) receive(projects, getToken);
       } catch {
         // Not surfaced: the list on screen is still valid, and the next tick retries.
       }
@@ -126,30 +164,48 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
 
     load: async (getToken, force = false) => {
       if (!shouldLoad(get().status, force)) return;
+      const startedIn = session;
       set({ status: "loading", error: null });
       try {
-        receive(await getProjects(getToken), getToken, { status: "ready", error: null });
+        let projects = await fetchProjects(getToken);
+        // Signed out meanwhile: reset() already cleared the store; send nothing more.
+        if (session !== startedIn) return;
+        // A local change raced the first read, so it may be missing: read once more.
+        projects ??= await fetchProjects(getToken);
+        if (session !== startedIn) return;
+        if (projects) {
+          receive(projects, getToken, { status: "ready", error: null });
+        } else {
+          // Raced twice: keep the local list. Those changes started polling,
+          // which brings in the server's list on its next tick.
+          set({ status: "ready", error: null });
+        }
       } catch (err) {
-        set({ status: "error", error: toErrorMessage(err, LOAD_ERROR) });
+        if (session === startedIn) set({ status: "error", error: toErrorMessage(err, LOAD_ERROR) });
       }
     },
 
     addProject: (project, getToken) => {
+      localChanges += 1;
       set((state) => ({ projects: [project, ...state.projects] }));
       followGeneration(getToken, true);
     },
 
     retryGeneration: async (projectId, getToken) => {
+      const startedIn = session;
       let updated: Project;
       try {
         updated = await retryProjectGeneration(projectId, getToken);
       } catch (err) {
+        if (session !== startedIn) return;
         if (err instanceof ApiError && err.status === 409) {
           await get().load(getToken, true);
           return;
         }
         throw err;
       }
+      if (session !== startedIn) return;
+      localChanges += 1;
       set((state) => ({
         projects: state.projects.map((project) => (project.id === updated.id ? updated : project)),
       }));
@@ -157,5 +213,11 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
     },
 
     stopGenerationPolling: stopPolling,
+
+    reset: () => {
+      session += 1;
+      stopPolling();
+      set({ projects: [], status: "idle", error: null });
+    },
   };
 });

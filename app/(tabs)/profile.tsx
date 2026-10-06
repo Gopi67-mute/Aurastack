@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { resetUserStores } from "../../store/resetUserStores";
 import { colors } from "../../theme/colors";
 
 // useAppBootstrap recomputes the shared destination asynchronously when
@@ -39,7 +40,9 @@ export default function Profile() {
     setIsSigningOut(true);
     try {
       await signOut();
-      // Success: the effect above navigates once isSignedIn flips to false.
+      // Only after success: a failed sign-out keeps the user and their data.
+      resetUserStores();
+      // The effect above navigates once isSignedIn flips to false.
     } catch {
       setIsSigningOut(false);
       setSignOutError("Something went wrong signing out. Please try again.");

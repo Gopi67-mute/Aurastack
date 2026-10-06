@@ -33,7 +33,7 @@ export default function ProjectLearningScreen() {
       >
         <LearningScreenHeader title={project?.projectName ?? "Learning"} onBack={goBack} />
         <View className="mt-4">
-          {projectId ? <ProjectLearningPanel projectId={projectId} /> : null}
+          {projectId ? <ProjectLearningPanel projectId={projectId} linkToProject /> : null}
         </View>
       </ScrollView>
     </>

@@ -10,5 +10,8 @@ import type { Project } from "../types/projects";
  * has finished, and 404 when it does not exist for this user.
  */
 export async function retryProjectGeneration(projectId: string, getToken: GetToken): Promise<Project> {
-  return api.post<Project>(`/api/v1/projects/${projectId}/generation/retry`, getToken);
+  return api.post<Project>(
+    `/api/v1/projects/${encodeURIComponent(projectId)}/generation/retry`,
+    getToken,
+  );
 }

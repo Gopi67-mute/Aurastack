@@ -11,6 +11,12 @@ Topic ids are never changed, and learning_progress / activity_events are never
 touched, so existing completions and streak idempotency keys stay valid.
 Safe to run repeatedly and from several workers at once: each step only
 matches documents that have not been migrated yet.
+
+Deployment: this runs at startup, before an instance serves requests. Any
+instance still running pre-Phase 3.3 code can keep writing legacy documents
+(no `curriculum` field, "preparing" status) that the new code does not
+expect, so retire every old instance before or as the new version starts;
+a restart of the new version migrates whatever they wrote meanwhile.
 """
 
 import logging

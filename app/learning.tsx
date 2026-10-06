@@ -10,12 +10,18 @@ import { LearningOverallCard } from "../features/learning/components/LearningOve
 import { LearningScreenHeader } from "../features/learning/components/LearningScreenHeader";
 import { ProjectLearningCard } from "../features/learning/components/ProjectLearningCard";
 import { useLearningOverview } from "../features/learning/hooks/useLearningOverview";
+import { useProjects } from "../features/projects/hooks/useProjects";
 
 // Global learning overview across all projects. Not the per-project Learning tab.
 export default function Learning() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { overall, projects, status, error, refresh } = useLearningOverview();
+  // Generation state is the server's project status, not inferred from topic counts.
+  const { projects: serverProjects } = useProjects();
+  const generationStatusOf = (projectId: string) =>
+    serverProjects.find((candidate) => candidate.id === projectId)?.status;
+  const isGenerating = serverProjects.some((candidate) => candidate.status === "generating");
   const isLoading = projects.length === 0 && (status === "idle" || status === "loading");
   // Continue Learning is "what's next": projects with a curriculum that isn't
   // fully completed yet. A 100% complete project never appears here, only in
@@ -79,7 +85,9 @@ export default function Learning() {
               <Text className="mt-3 text-body-md text-n300">
                 {hasAnyCurriculum
                   ? "You're all caught up. All learning topics for your projects are complete."
-                  : "Learning plans are being prepared."}
+                  : isGenerating
+                    ? "Generating your learning plan…"
+                    : "No learning topics are available yet."}
               </Text>
             ) : (
               <View className="mt-3 gap-3">
@@ -109,6 +117,7 @@ export default function Learning() {
                   key={project.projectId}
                   project={project}
                   summary={summary}
+                  generationStatus={generationStatusOf(project.projectId)}
                   onPress={() =>
                     router.push({
                       pathname: "/learning/[projectId]",

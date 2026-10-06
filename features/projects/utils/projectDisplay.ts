@@ -7,6 +7,18 @@ const STATUS_LABELS: Partial<Record<ProjectStatus, string>> = {
   failed: "Generation failed",
 };
 
+/** Short, always-present status for screen readers. */
+const ACCESSIBILITY_STATUS_LABELS: Record<ProjectStatus, string> = {
+  generating: "Generating",
+  ready: "Ready",
+  failed: "Generation failed",
+};
+
+/** "Generating" / "Ready" / "Generation failed", for accessibility labels. */
+export function getProjectAccessibilityStatus(project: Project): string {
+  return ACCESSIBILITY_STATUS_LABELS[project.status];
+}
+
 /** Generated tech stack when it exists, otherwise the chosen platforms. */
 export function getProjectSubtitle(project: Project): string {
   if (project.techStack?.length) return project.techStack.join(" · ");

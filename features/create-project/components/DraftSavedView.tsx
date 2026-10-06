@@ -11,15 +11,16 @@ interface DraftSavedViewProps {
   onDone: () => void;
 }
 
-// Temporary confirmation shown until the real generation flow exists.
+// Shown once the backend has created the project. Its learning plan is still
+// being generated in the background; the project's status tracks that.
 export function DraftSavedView({ draft, onCreateAnother, onDone }: DraftSavedViewProps) {
   return (
     <View className="flex-1 justify-between">
       <View className="items-center pt-8">
         <CircleCheck size={56} color={colors.semantic.success} />
-        <Text className="mt-4 text-h2 text-white text-center">Project details saved</Text>
+        <Text className="mt-4 text-h2 text-white text-center">Project created</Text>
         <Text className="mt-2 text-body-md text-n300 text-center">
-          Project ready for generation.
+          We&apos;re generating your learning plan. You can follow its progress in Projects.
         </Text>
 
         <View className="mt-8 w-full gap-3 rounded-xl border border-n600 bg-n800 p-4">
