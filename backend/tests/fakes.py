@@ -139,6 +139,14 @@ class FakeLearningRepository:
             for topic in await self.list_topics(project_id, version)
         ]
 
+    async def list_topic_ids_for_projects(
+        self, curriculum_versions: dict[str, int]
+    ) -> list[dict[str, Any]]:
+        return [
+            {"project_id": topic["project_id"], "id": topic["id"]}
+            for topic in await self.list_topics_for_projects(curriculum_versions)
+        ]
+
     async def get_topic(
         self, project_id: str, curriculum_version: int, topic_id: str
     ) -> dict[str, Any] | None:
@@ -189,18 +197,25 @@ class FakeLearningRepository:
             if key[0] == user_id and key[1] in project_ids
         ]
 
-    async def upsert_progress(
-        self, user_id: str, project_id: str, topic_id: str, status: str, completed_at: str | None
-    ) -> None:
+    async def complete_progress(
+        self, user_id: str, project_id: str, topic_id: str, completed_at: str
+    ) -> str:
+        # No await between the check and the write, so this is atomic under
+        # asyncio exactly as find_one_and_update is in MongoDB.
+        key = (user_id, project_id, topic_id)
+        existing = self._progress.get(key)
+        if existing is not None and existing["status"] == "completed" and existing["completed_at"]:
+            return existing["completed_at"]
         # Stores the filter fields too, matching Mongo's upsert behaviour of
         # copying equality filters into a newly inserted document.
-        self._progress[(user_id, project_id, topic_id)] = {
+        self._progress[key] = {
             "user_id": user_id,
             "project_id": project_id,
             "topic_id": topic_id,
-            "status": status,
+            "status": "completed",
             "completed_at": completed_at,
         }
+        return completed_at
 
     async def delete_for_project(self, project_id: str) -> None:
         self._topics.pop(project_id, None)

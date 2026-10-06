@@ -654,7 +654,7 @@ async def test_project_without_curriculum_has_no_topics() -> None:
 async def test_generation_never_deletes_learning_progress() -> None:
     harness = Harness(BrokenProvider())
     claim = await harness.create()
-    await harness.learning.upsert_progress(USER, claim.project_id, "legacy-topic", "completed", "t")
+    await harness.learning.complete_progress(USER, claim.project_id, "legacy-topic", "t")
 
     await harness.generation.run(claim)
     _, retry = await harness.generation.claim_retry(USER, claim.project_id)

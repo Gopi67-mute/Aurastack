@@ -36,7 +36,11 @@ interface ProjectStoreState {
   projects: readonly Project[];
   status: RemoteStatus;
   error: string | null;
-  /** Fetches once per session; `force` refetches (e.g. pull to refresh). */
+  /**
+   * Fetches once per session; `force` refetches (e.g. pull to refresh). A
+   * forced load requested while another is in flight runs once that one
+   * settles, and resolves then.
+   */
   load: (getToken: GetToken, force?: boolean) => Promise<void>;
   /** Adds a project the backend just created and follows its generation. */
   addProject: (project: Project, getToken: GetToken) => void;
@@ -89,6 +93,9 @@ function hasNewlyReadyProject(previous: readonly Project[], next: readonly Proje
 export const useProjectStore = create<ProjectStoreState>()((set, get) => {
   // Not store state: no screen renders from these, so changes must not re-render.
   let poll: PollState | null = null;
+  let inFlight: Promise<void> | null = null;
+  /** A forced load arrived during `inFlight`, whose response may predate the change behind it. */
+  let reloadRequested = false;
   /** Bumped by every local change to the list; reads started earlier are stale. */
   let localChanges = 0;
   /** Bumped by reset(); anything started for the previous user is dropped. */
@@ -157,32 +164,52 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
     scheduleNextPoll(poll, getToken);
   };
 
+  const fetchAndReceive = async (getToken: GetToken, startedIn: number) => {
+    set({ status: "loading", error: null });
+    try {
+      let projects = await fetchProjects(getToken);
+      // Signed out meanwhile: reset() already cleared the store; send nothing more.
+      if (session !== startedIn) return;
+      // A local change raced the first read, so it may be missing: read once more.
+      projects ??= await fetchProjects(getToken);
+      if (session !== startedIn) return;
+      if (projects) {
+        receive(projects, getToken, { status: "ready", error: null });
+      } else {
+        // Raced twice: keep the local list. Those changes started polling,
+        // which brings in the server's list on its next tick.
+        set({ status: "ready", error: null });
+      }
+    } catch (err) {
+      if (session === startedIn) set({ status: "error", error: toErrorMessage(err, LOAD_ERROR) });
+    }
+  };
+
+  /** One load, then one more for each batch of forced loads requested meanwhile. */
+  const loadCoalesced = async (getToken: GetToken) => {
+    const startedIn = session;
+    do {
+      reloadRequested = false;
+      await fetchAndReceive(getToken, startedIn);
+    } while (reloadRequested && session === startedIn);
+  };
+
   return {
     projects: [],
     status: "idle",
     error: null,
 
-    load: async (getToken, force = false) => {
-      if (!shouldLoad(get().status, force)) return;
-      const startedIn = session;
-      set({ status: "loading", error: null });
-      try {
-        let projects = await fetchProjects(getToken);
-        // Signed out meanwhile: reset() already cleared the store; send nothing more.
-        if (session !== startedIn) return;
-        // A local change raced the first read, so it may be missing: read once more.
-        projects ??= await fetchProjects(getToken);
-        if (session !== startedIn) return;
-        if (projects) {
-          receive(projects, getToken, { status: "ready", error: null });
-        } else {
-          // Raced twice: keep the local list. Those changes started polling,
-          // which brings in the server's list on its next tick.
-          set({ status: "ready", error: null });
-        }
-      } catch (err) {
-        if (session === startedIn) set({ status: "error", error: toErrorMessage(err, LOAD_ERROR) });
+    load: (getToken, force = false) => {
+      if (inFlight) {
+        if (force) reloadRequested = true;
+        return inFlight;
       }
+      if (!shouldLoad(get().status, force)) return Promise.resolve();
+      const run: Promise<void> = loadCoalesced(getToken).finally(() => {
+        if (inFlight === run) inFlight = null;
+      });
+      inFlight = run;
+      return run;
     },
 
     addProject: (project, getToken) => {
@@ -216,6 +243,8 @@ export const useProjectStore = create<ProjectStoreState>()((set, get) => {
 
     reset: () => {
       session += 1;
+      inFlight = null;
+      reloadRequested = false;
       stopPolling();
       set({ projects: [], status: "idle", error: null });
     },

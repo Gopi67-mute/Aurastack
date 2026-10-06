@@ -6,7 +6,10 @@ export type { ProjectIconKey };
 export type RecentProject = Project;
 
 export interface HomeData {
-  /** Overall completion percentage across the user's work, 0-100. */
+  /**
+   * Overall learning percentage, 0-100: completed / total topics across every
+   * project's active curriculum, the same figure the Learning screen shows.
+   */
   overallProgress: number;
   projects: {
     total: number;
@@ -18,7 +21,8 @@ export interface HomeData {
   };
   momentum: {
     streakDays: number;
-    tasksDone: number;
+    /** Learning topics completed in the last 7 days, as counted by the backend. */
+    topicsThisWeek: number;
   };
   recentProjects: readonly RecentProject[];
 }

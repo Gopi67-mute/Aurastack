@@ -66,8 +66,8 @@ async def _seed_legacy(store: dict[str, Any]) -> None:
             _legacy_topic("with-topics", "deployment", 2),
         ]
     )
-    await store["learning"].upsert_progress(
-        USER, "with-topics", "architecture-planning", "completed", "2026-09-02T08:00:00+00:00"
+    await store["learning"].complete_progress(
+        USER, "with-topics", "architecture-planning", "2026-09-02T08:00:00+00:00"
     )
     await ActivityService(store["activity"]).record_learning_completion(
         user_id=USER,

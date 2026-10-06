@@ -9,7 +9,8 @@ export interface TopicContent {
   how: string;
   example: string;
   apply: string;
-  miniTask?: string;
+  /** Null when the topic has no mini task. */
+  miniTask?: string | null;
 }
 
 export interface LearningTopic {
@@ -22,15 +23,15 @@ export interface LearningTopic {
   /** 1-based position in the project's learning order. */
   order: number;
   status: TopicStatus;
-  /** ISO 8601 timestamp; set once the topic is completed. */
-  completedAt?: string;
+  /** ISO 8601 timestamp; null until the topic is completed. */
+  completedAt?: string | null;
   content: TopicContent;
 }
 
 /** The user's persisted progress on one topic. */
 export interface TopicProgress {
   status: TopicStatus;
-  completedAt?: string;
+  completedAt?: string | null;
 }
 
 /**
@@ -40,7 +41,8 @@ export interface TopicProgress {
 export interface ProjectLearning {
   projectId: string;
   projectName: string;
-  iconKey?: ProjectIconKey;
+  /** Null until a generated icon exists. */
+  iconKey?: ProjectIconKey | null;
   /** ISO 8601 timestamp; fallback ordering signal when no topic has been completed yet. */
   createdAt: string;
   topics: readonly LearningTopic[];

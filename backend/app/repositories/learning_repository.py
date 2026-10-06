@@ -1,6 +1,7 @@
 from typing import Any
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo import ReturnDocument
 
 
 class LearningRepository:
@@ -39,6 +40,27 @@ class LearningRepository:
                 ]
             }
         ).sort("order", 1)
+        return [doc async for doc in cursor]
+
+    async def list_topic_ids_for_projects(
+        self, curriculum_versions: dict[str, int]
+    ) -> list[dict[str, Any]]:
+        """`project_id` and `id` only of each project's given curriculum version.
+
+        For counting topics without transferring their lesson content.
+        """
+
+        if not curriculum_versions:
+            return []
+        cursor = self._topics.find(
+            {
+                "$or": [
+                    {"project_id": project_id, "curriculum_version": version}
+                    for project_id, version in curriculum_versions.items()
+                ]
+            },
+            {"_id": 0, "project_id": 1, "id": 1},
+        )
         return [doc async for doc in cursor]
 
     async def get_topic(
@@ -89,14 +111,43 @@ class LearningRepository:
             {"user_id": user_id, "project_id": project_id, "topic_id": topic_id}
         )
 
-    async def upsert_progress(
-        self, user_id: str, project_id: str, topic_id: str, status: str, completed_at: str | None
-    ) -> None:
-        await self._progress.update_one(
+    async def complete_progress(
+        self, user_id: str, project_id: str, topic_id: str, completed_at: str
+    ) -> str:
+        """Mark a topic completed; the first completion's timestamp wins.
+
+        One atomic upsert, so concurrent completions of the same topic all
+        resolve to whichever MongoDB applied first and none can overwrite its
+        `completed_at`. Returns the stored `completed_at`.
+
+        Two concurrent upserts that both find no document race on the unique
+        (user_id, project_id, topic_id) index; MongoDB retries the loser as
+        an update because the filter is exactly that index's equality match.
+        """
+
+        doc = await self._progress.find_one_and_update(
             {"user_id": user_id, "project_id": project_id, "topic_id": topic_id},
-            {"$set": {"status": status, "completed_at": completed_at}},
+            [
+                {
+                    "$set": {
+                        # Evaluated against the document as it was before
+                        # this update, so `$status` is the previous status.
+                        "completed_at": {
+                            "$cond": [
+                                {"$eq": ["$status", "completed"]},
+                                {"$ifNull": ["$completed_at", {"$literal": completed_at}]},
+                                {"$literal": completed_at},
+                            ]
+                        },
+                        "status": "completed",
+                    }
+                }
+            ],
+            projection={"_id": 0, "completed_at": 1},
             upsert=True,
+            return_document=ReturnDocument.AFTER,
         )
+        return doc["completed_at"]
 
     async def delete_for_project(self, project_id: str) -> None:
         await self._topics.delete_many({"project_id": project_id})

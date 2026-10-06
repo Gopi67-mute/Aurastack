@@ -13,7 +13,7 @@ export function StreakCard({ streakDays, week }: StreakCardProps) {
   const message =
     streakDays > 0
       ? "Keep the momentum going!"
-      : "Complete a task today to start a streak.";
+      : "Complete a learning topic today to start a streak.";
 
   return (
     <View className="rounded-xl border border-n600 bg-n800 p-4">

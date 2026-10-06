@@ -48,8 +48,7 @@ beforeEach(() => {
   mockGetProjects.mockReset();
   mockRetry.mockReset();
   mockLoadLearning.mockClear();
-  useProjectStore.getState().stopGenerationPolling();
-  useProjectStore.setState({ projects: [], status: "idle", error: null });
+  useProjectStore.getState().reset();
   useLearningStore.setState({ load: mockLoadLearning });
 });
 
@@ -273,6 +272,73 @@ describe("useProjectStore stale responses", () => {
     expect(mockGetProjects).toHaveBeenCalledTimes(2);
     expect(ids()).toEqual(["new", "old"]);
     expect(useProjectStore.getState().status).toBe("ready");
+  });
+});
+
+describe("useProjectStore load coalescing", () => {
+  const progressOf = (id: string) =>
+    useProjectStore.getState().projects.find((candidate) => candidate.id === id)?.progress;
+
+  it("runs exactly one fresh load after the in-flight one when forced meanwhile", async () => {
+    const first = deferred<Project[]>();
+    const second = deferred<Project[]>();
+    const secondRequested = deferred<void>();
+    mockGetProjects.mockReturnValueOnce(first.promise).mockImplementationOnce(() => {
+      secondRequested.resolve();
+      return second.promise;
+    });
+
+    const initial = useProjectStore.getState().load(getToken);
+    // Two topics completed while the first read was in flight.
+    const forced = useProjectStore.getState().load(getToken, true);
+    const forcedAgain = useProjectStore.getState().load(getToken, true);
+    let forcedSettled = false;
+    void forced.then(() => {
+      forcedSettled = true;
+    });
+    expect(mockGetProjects).toHaveBeenCalledTimes(1);
+
+    // The first read predates those completions.
+    first.resolve([{ ...project("a", "ready"), progress: 40 }]);
+    await secondRequested.promise;
+    expect(mockGetProjects).toHaveBeenCalledTimes(2);
+    expect(forcedSettled).toBe(false);
+
+    second.resolve([{ ...project("a", "ready"), progress: 60 }]);
+    await Promise.all([initial, forced, forcedAgain]);
+
+    expect(progressOf("a")).toBe(60);
+    expect(useProjectStore.getState().status).toBe("ready");
+    await tick(3);
+    expect(mockGetProjects).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not reload when only unforced loads arrive meanwhile", async () => {
+    const first = deferred<Project[]>();
+    mockGetProjects.mockReturnValueOnce(first.promise).mockResolvedValue([project("a", "ready")]);
+
+    const initial = useProjectStore.getState().load(getToken);
+    const unforced = useProjectStore.getState().load(getToken);
+    first.resolve([project("a", "ready")]);
+    await Promise.all([initial, unforced]);
+    await tick(3);
+
+    expect(mockGetProjects).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops the pending reload when reset meanwhile", async () => {
+    const first = deferred<Project[]>();
+    mockGetProjects.mockReturnValueOnce(first.promise).mockResolvedValue([project("b", "ready")]);
+
+    const initial = useProjectStore.getState().load(getToken);
+    const forced = useProjectStore.getState().load(getToken, true);
+    useProjectStore.getState().reset();
+    first.resolve([project("a", "ready")]);
+    await Promise.all([initial, forced]);
+
+    expect(mockGetProjects).toHaveBeenCalledTimes(1);
+    expect(ids()).toEqual([]);
+    expect(useProjectStore.getState().status).toBe("idle");
   });
 });
 

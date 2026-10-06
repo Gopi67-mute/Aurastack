@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toErrorMessage, type RemoteStatus } from "../../../lib/remoteData";
 import { useLearningStore } from "../../../store/useLearningStore";
 import { useMomentumStore } from "../../../store/useMomentumStore";
+import { useProjectStore } from "../../../store/useProjectStore";
 import { completeLearningTopic } from "../services/completeLearningTopic";
 import type { LearningTopic, ProjectLearning } from "../types/learning";
 import { useLearningData } from "./useLearningData";
@@ -25,7 +26,8 @@ interface UseLearningTopicResult {
 /**
  * Resolves one topic by project + topic id. Opening a not-started topic shows
  * it as in_progress for this session; `markCompleted` persists the completion
- * on the backend and refreshes the authoritative Momentum/Streak state.
+ * on the backend and refreshes the authoritative Momentum/Streak state and
+ * project progress.
  */
 export function useLearningTopic(
   projectId: string | undefined,
@@ -36,6 +38,7 @@ export function useLearningTopic(
   const markOpened = useLearningStore((state) => state.markOpened);
   const applyCompletedTopic = useLearningStore((state) => state.applyCompletedTopic);
   const loadMomentum = useMomentumStore((state) => state.load);
+  const loadProjects = useProjectStore((state) => state.load);
 
   const [isCompleting, setIsCompleting] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
@@ -60,16 +63,18 @@ export function useLearningTopic(
       // The backend's response is the authoritative topic state, including the
       // original completedAt when this topic was already completed.
       applyCompletedTopic(projectId, await completeLearningTopic(projectId, topicId, getToken));
-      // The completion produced a qualifying activity, so the streak may have
-      // changed. Refetch rather than adjusting it here.
-      await loadMomentum(getToken, true);
+      // The completion produced a qualifying activity and changed the
+      // project's progress, both calculated by the backend. Refetch rather
+      // than adjusting either here. Neither load throws; each store surfaces
+      // its own failure.
+      await Promise.all([loadMomentum(getToken, true), loadProjects(getToken, true)]);
     } catch (err) {
       // Surfaced to the user: never claim the completion persisted when it did not.
       setCompleteError(toErrorMessage(err, COMPLETE_ERROR));
     } finally {
       setIsCompleting(false);
     }
-  }, [projectId, topicId, isCompleting, getToken, applyCompletedTopic, loadMomentum]);
+  }, [projectId, topicId, isCompleting, getToken, applyCompletedTopic, loadMomentum, loadProjects]);
 
   return { project, topic, status, error, isCompleting, completeError, markCompleted };
 }

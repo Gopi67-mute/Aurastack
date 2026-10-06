@@ -15,7 +15,11 @@ export interface Project {
   id: string;
   name: string;
   status: ProjectStatus;
-  /** Completion percentage, 0-100. */
+  /**
+   * Learning progress, 0-100: completed / total topics of the active
+   * curriculum. Calculated by the server on every read and never written by
+   * the client; 0 while generating or failed.
+   */
   progress: number;
   /** ISO 8601 creation timestamp. */
   createdAt: string;
@@ -24,5 +28,6 @@ export interface Project {
   platforms?: readonly ProjectPlatform[];
   /** Absent until a generated blueprint exists. */
   techStack?: readonly string[];
-  iconKey?: ProjectIconKey;
+  /** Null until a generated icon exists. */
+  iconKey?: ProjectIconKey | null;
 }

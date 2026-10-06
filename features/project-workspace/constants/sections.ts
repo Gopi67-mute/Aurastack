@@ -43,4 +43,5 @@ export const WORKSPACE_SECTIONS: readonly WorkspaceSectionConfig[] = [
   },
 ];
 
+/** Opening section for a project that is not ready; see getDefaultWorkspaceSection. */
 export const DEFAULT_WORKSPACE_SECTION: WorkspaceSectionKey = "techStack";

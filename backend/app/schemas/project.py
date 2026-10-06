@@ -16,15 +16,15 @@ class ProjectCreateRequest(BaseModel):
 
 
 class ProjectUpdateRequest(BaseModel):
-    # Unknown fields — notably `status` — are rejected rather than silently
-    # dropped, so a client cannot believe it changed the lifecycle.
+    # Unknown fields — notably the server-owned `status` and `progress` — are
+    # rejected rather than silently dropped, so a client cannot believe it
+    # changed them.
     model_config = ConfigDict(extra="forbid")
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     description: Optional[str] = Field(default=None, max_length=500)
     platforms: Optional[list[ProjectPlatform]] = None
     techStack: Optional[list[str]] = None
-    progress: Optional[int] = Field(default=None, ge=0, le=100)
     iconKey: Optional[ProjectIconKey] = None
 
 
@@ -34,6 +34,8 @@ class Project(BaseModel):
     id: str
     name: str
     status: ProjectStatus
+    #: Learning progress of the active curriculum, 0-100, calculated on every
+    #: read. Never stored or client-supplied.
     progress: int
     createdAt: str
     description: Optional[str] = None

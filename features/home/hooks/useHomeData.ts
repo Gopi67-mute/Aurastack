@@ -4,16 +4,22 @@ import type { RemoteStatus } from "../../../lib/remoteData";
 import { useLearningOverview } from "../../learning/hooks/useLearningOverview";
 import { useMomentum } from "../../progress/hooks/useMomentum";
 import { useProjects } from "../../projects/hooks/useProjects";
-import { createMockHomeData } from "../constants/mockHomeData";
+import type { Project } from "../../projects/types/projects";
 import type { HomeData } from "../types/home";
 
 const RECENT_PROJECTS_LIMIT = 3;
 
+/** Still generating, or ready with learning left. A failed project is not active. */
+function isActiveProject(project: Project): boolean {
+  return project.status === "generating" || (project.status === "ready" && project.progress < 100);
+}
+
 /**
  * Supplies Home dashboard data. Projects, learning and momentum all come from
  * the backend through their shared stores, so Home always agrees with the
- * Projects, Learning and Progress screens. `overallProgress` is still local
- * mock data, to be replaced by an API-backed figure later.
+ * Projects, Learning and Progress screens. Every figure is server-backed:
+ * project progress is calculated by the server, and the overall progress is
+ * the Learning overview's own total, never an average of percentages.
  *
  * `status` is the combined state of the three reads: loading while any is
  * still loading, error if any failed.
@@ -34,15 +40,15 @@ export function useHomeData(): {
 
   const data = useMemo<HomeData>(
     () => ({
-      ...createMockHomeData(),
+      overallProgress: overall.percent,
       learning: { completedTopics: overall.completed, totalTopics: overall.total },
       momentum: {
         streakDays: momentum?.streakDays ?? 0,
-        tasksDone: momentum?.weekly.tasks ?? 0,
+        topicsThisWeek: momentum?.weekly.topics ?? 0,
       },
       projects: {
         total: projects.length,
-        active: projects.filter((project) => project.progress < 100).length,
+        active: projects.filter(isActiveProject).length,
       },
       recentProjects: projects.slice(0, RECENT_PROJECTS_LIMIT),
     }),

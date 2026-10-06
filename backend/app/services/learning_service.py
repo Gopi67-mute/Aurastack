@@ -6,6 +6,7 @@ from app.repositories.project_repository import ProjectRepository
 from app.schemas.learning import LearningTopic, ProjectLearning, TopicContent
 from app.services.activity_service import ActivityService
 from app.services.project_service import ProjectNotFoundError
+from app.utils.learning_progress import active_curriculum_version
 
 
 class TopicNotFoundError(Exception):
@@ -37,7 +38,7 @@ class LearningService:
         active_versions = {
             doc["id"]: version
             for doc in project_docs
-            if (version := _active_curriculum_version(doc)) is not None
+            if (version := active_curriculum_version(doc)) is not None
         }
 
         topic_docs = await self._learning.list_topics_for_projects(active_versions)
@@ -71,7 +72,7 @@ class LearningService:
     async def get_project_learning(self, user_id: str, project_id: str) -> ProjectLearning:
         project_doc = await self._require_owned_project(user_id, project_id)
 
-        version = _active_curriculum_version(project_doc)
+        version = active_curriculum_version(project_doc)
         topic_docs = [] if version is None else await self._learning.list_topics(project_id, version)
         progress_by_topic = await self._learning.list_progress_for_project(user_id, project_id)
 
@@ -96,10 +97,10 @@ class LearningService:
     async def complete_topic(self, user_id: str, project_id: str, topic_id: str) -> LearningTopic:
         """Complete a topic and record the qualifying activity it produces.
 
-        Idempotent end to end: an already-completed topic keeps its original
-        `completedAt`, and the activity is keyed on the completion itself, so
-        retrying this request can never add a second qualifying activity or
-        advance the streak twice.
+        Idempotent end to end: the first completion's `completedAt` wins, even
+        between concurrent requests, and the activity is keyed on the
+        completion itself, so retrying this request can never add a second
+        qualifying activity or advance the streak twice.
 
         The activity write runs on both paths deliberately. If it ever fails
         the route returns an error, and because a retry reaches this same
@@ -110,18 +111,9 @@ class LearningService:
         project_doc = await self._require_owned_project(user_id, project_id)
         topic_doc = await self._require_topic(project_doc, topic_id)
 
-        existing = await self._learning.get_progress(user_id, project_id, topic_id)
-        completed_at = (
-            existing.get("completed_at")
-            if existing is not None and existing.get("status") == "completed"
-            else None
+        completed_at = await self._learning.complete_progress(
+            user_id, project_id, topic_id, datetime.now(timezone.utc).isoformat()
         )
-
-        if completed_at is None:
-            completed_at = datetime.now(timezone.utc).isoformat()
-            await self._learning.upsert_progress(
-                user_id, project_id, topic_id, "completed", completed_at
-            )
 
         await self._activity.record_learning_completion(
             user_id=user_id,
@@ -144,7 +136,7 @@ class LearningService:
         """A topic of the project's active curriculum only; anything left over
         from a failed or superseded generation attempt is not found."""
 
-        version = _active_curriculum_version(project_doc)
+        version = active_curriculum_version(project_doc)
         topic_doc = (
             None
             if version is None
@@ -153,13 +145,6 @@ class LearningService:
         if topic_doc is None:
             raise TopicNotFoundError(topic_id)
         return topic_doc
-
-
-def _active_curriculum_version(project_doc: dict[str, Any]) -> int | None:
-    """None until a generation has succeeded for the project."""
-
-    curriculum = project_doc.get("curriculum")
-    return curriculum["version"] if curriculum else None
 
 
 def _topic_from_docs(topic_doc: dict[str, Any], progress_doc: dict[str, Any] | None) -> LearningTopic:

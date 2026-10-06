@@ -9,13 +9,13 @@ from app.repositories.activity_repository import ActivityRepository
 from app.repositories.learning_repository import LearningRepository
 from app.repositories.project_repository import ProjectRepository
 from app.schemas.project import Project, ProjectCreateRequest, ProjectStatus, ProjectUpdateRequest
+from app.utils.learning_progress import active_curriculum_version, learning_percent
 
 _UPDATE_FIELD_MAP = {
     "name": "name",
     "description": "description",
     "platforms": "platforms",
     "techStack": "tech_stack",
-    "progress": "progress",
     "iconKey": "icon_key",
 }
 
@@ -81,14 +81,13 @@ class ProjectService:
 
     async def list_projects(self, user_id: str) -> list[Project]:
         docs = await self._projects.list_for_user(user_id)
-        now = datetime.now(timezone.utc)
-        return [project_from_doc(doc, now) for doc in docs]
+        return await self._with_progress(user_id, docs)
 
     async def get_project(self, user_id: str, project_id: str) -> Project:
         doc = await self._projects.get_by_id_for_user(project_id, user_id)
         if doc is None:
             raise ProjectNotFoundError(project_id)
-        return project_from_doc(doc)
+        return (await self._with_progress(user_id, [doc]))[0]
 
     async def create_project(
         self, user_id: str, payload: ProjectCreateRequest
@@ -146,13 +145,13 @@ class ProjectService:
         updates = {_UPDATE_FIELD_MAP[field]: value for field, value in changes.items()}
 
         if not updates:
-            return project_from_doc(existing)
+            return (await self._with_progress(user_id, [existing]))[0]
 
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
         doc = await self._projects.update(project_id, user_id, updates)
         if doc is None:
             raise ProjectNotFoundError(project_id)
-        return project_from_doc(doc)
+        return (await self._with_progress(user_id, [doc]))[0]
 
     async def delete_project(self, user_id: str, project_id: str) -> None:
         deleted = await self._projects.delete(project_id, user_id)
@@ -160,6 +159,53 @@ class ProjectService:
             raise ProjectNotFoundError(project_id)
         await self._learning.delete_for_project(project_id)
         await self._activity.delete_for_project(project_id)
+
+    async def _with_progress(self, user_id: str, docs: list[dict[str, Any]]) -> list[Project]:
+        """Projects with their server-calculated learning progress.
+
+        Progress is completed topics / topics of the project's active
+        curriculum, using this user's completions only. It is derived on every
+        read and never stored: the documents' legacy `progress` field is not
+        read. A project that is not ready has no active curriculum to measure
+        and reports 0.
+
+        Two batched reads however many projects there are, never a pair per
+        project. Completions of a superseded curriculum version cannot match
+        an active topic id (every version gets fresh ids), so they never count.
+        """
+
+        now = datetime.now(timezone.utc)
+        versions = {
+            doc["id"]: version
+            for doc in docs
+            if effective_status(doc, now) == "ready"
+            and (version := active_curriculum_version(doc)) is not None
+        }
+
+        topic_docs = await self._learning.list_topic_ids_for_projects(versions)
+        progress_docs = await self._learning.list_progress_for_projects(user_id, list(versions))
+
+        completed = {
+            (doc["project_id"], doc["topic_id"])
+            for doc in progress_docs
+            if doc.get("status") == "completed"
+        }
+        totals: dict[str, int] = {}
+        done: dict[str, int] = {}
+        for topic_doc in topic_docs:
+            project_id = topic_doc["project_id"]
+            totals[project_id] = totals.get(project_id, 0) + 1
+            if (project_id, topic_doc["id"]) in completed:
+                done[project_id] = done.get(project_id, 0) + 1
+
+        return [
+            project_from_doc(
+                doc,
+                now,
+                progress=learning_percent(done.get(doc["id"], 0), totals.get(doc["id"], 0)),
+            )
+            for doc in docs
+        ]
 
 
 def is_generation_expired(doc: dict[str, Any], now: datetime) -> bool:
@@ -182,12 +228,18 @@ def effective_status(doc: dict[str, Any], now: datetime) -> ProjectStatus:
     return "failed" if is_generation_expired(doc, now) else doc["status"]
 
 
-def project_from_doc(doc: dict[str, Any], now: datetime | None = None) -> Project:
+def project_from_doc(
+    doc: dict[str, Any], now: datetime | None = None, *, progress: int = 0
+) -> Project:
+    """`progress` is the server-calculated learning percentage (see
+    ProjectService._with_progress); the default 0 is only right for a project
+    that is not ready."""
+
     return Project(
         id=doc["id"],
         name=doc["name"],
         status=effective_status(doc, now or datetime.now(timezone.utc)),
-        progress=doc["progress"],
+        progress=progress,
         createdAt=doc["created_at"],
         description=doc.get("description"),
         platforms=doc.get("platforms"),

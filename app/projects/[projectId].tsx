@@ -12,9 +12,9 @@ import { ProjectSummaryCard } from "../../features/project-workspace/components/
 import { WorkspaceHeader } from "../../features/project-workspace/components/WorkspaceHeader";
 import { WorkspaceSectionPanel } from "../../features/project-workspace/components/WorkspaceSectionPanel";
 import { WorkspaceTabs } from "../../features/project-workspace/components/WorkspaceTabs";
-import { DEFAULT_WORKSPACE_SECTION } from "../../features/project-workspace/constants/sections";
 import { useProjectById } from "../../features/project-workspace/hooks/useProjectById";
 import type { WorkspaceSectionKey } from "../../features/project-workspace/types/workspace";
+import { getDefaultWorkspaceSection } from "../../features/project-workspace/utils/getDefaultWorkspaceSection";
 
 // Full-screen project detail route (outside the tabs), like /create-project.
 export default function ProjectWorkspace() {
@@ -23,7 +23,10 @@ export default function ProjectWorkspace() {
   const { projectId } = useLocalSearchParams<{ projectId?: string | string[] }>();
   const id = Array.isArray(projectId) ? projectId[0] : projectId;
   const { project, status, error, refresh } = useProjectById(id);
-  const [section, setSection] = useState<WorkspaceSectionKey>(DEFAULT_WORKSPACE_SECTION);
+  // Null until the user picks a section, so the default follows the project's
+  // status: it may still be loading, or turn ready while the workspace is open.
+  const [chosenSection, setSection] = useState<WorkspaceSectionKey | null>(null);
+  const section = chosenSection ?? getDefaultWorkspaceSection(project?.status);
 
   // Back pops to Projects normally; falls back there when opened directly.
   const goBack = () => (router.canGoBack() ? router.back() : router.replace("/projects"));

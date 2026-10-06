@@ -67,11 +67,26 @@ def test_update_project_only_changes_supplied_fields(client: TestClient) -> None
     created = client.post("/api/v1/projects", json={"title": "A", "description": "d", "platforms": ["web"]})
     project_id = created.json()["data"]["id"]
 
-    response = client.patch(f"/api/v1/projects/{project_id}", json={"progress": 50})
+    response = client.patch(f"/api/v1/projects/{project_id}", json={"name": "Renamed"})
     assert response.status_code == 200
     updated = response.json()["data"]
-    assert updated["progress"] == 50
-    assert updated["name"] == "A"
+    assert updated["name"] == "Renamed"
+    assert updated["description"] == "d"
+    assert updated["platforms"] == ["web"]
+
+
+def test_update_project_cannot_write_progress(
+    client: TestClient, repos: dict[str, object]
+) -> None:
+    created = client.post("/api/v1/projects", json={"title": "A", "description": "d", "platforms": ["web"]})
+    project_id = created.json()["data"]["id"]
+    stored_before = dict(repos["project"]._docs[project_id])
+
+    response = client.patch(f"/api/v1/projects/{project_id}", json={"progress": 50})
+
+    assert response.status_code == 422
+    assert repos["project"]._docs[project_id] == stored_before
+    assert client.get(f"/api/v1/projects/{project_id}").json()["data"]["progress"] == 0
 
 
 def test_update_project_cannot_change_lifecycle_status(

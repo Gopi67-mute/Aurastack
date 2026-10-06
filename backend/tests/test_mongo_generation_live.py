@@ -2,7 +2,8 @@
 
 The in-memory fakes mirror MongoDB's semantics; this confirms the real
 queries behave the same: atomic retry claims, attempt fencing, the lease,
-and an idempotent legacy migration.
+an idempotent legacy migration, first-write-wins topic completion and the
+server-calculated project progress.
 
 Skipped unless explicitly enabled, so the normal suite and CI never need a
 database. It uses MONGODB_URI from the environment or backend/.env, but only
@@ -27,6 +28,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from app.ai.deterministic_provider import DeterministicProvider
 from app.core.config import Settings
 from app.db.migrations import MigrationReport, migrate_generation_lifecycle
+from app.repositories.activity_repository import ActivityRepository
 from app.repositories.learning_repository import LearningRepository
 from app.repositories.project_repository import ProjectRepository
 from app.schemas.project import ProjectCreateRequest
@@ -34,6 +36,7 @@ from app.services.activity_service import ActivityService
 from app.services.generation_service import GenerationConflictError, GenerationService
 from app.services.learning_service import LearningService
 from app.services.project_service import GENERATION_LEASE, GenerationClaim, ProjectService
+from app.utils.learning_progress import learning_percent
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("MONGO_LIVE_TEST") != "1",
@@ -227,3 +230,83 @@ async def test_legacy_migration_is_idempotent() -> None:
         assert (await live.doc("with-topics"))["status"] == "ready"
         assert (await live.doc("without-topics"))["status"] == "failed"
         assert await live.topic_versions("with-topics") == {1}
+
+
+async def _completion_indexes(db: AsyncIOMotorDatabase) -> None:
+    """The unique indexes connect_to_mongo creates, which concurrent upserts race on."""
+
+    await db.learning_progress.create_index(
+        [("user_id", 1), ("project_id", 1), ("topic_id", 1)], unique=True
+    )
+    await db.activity_events.create_index([("user_id", 1), ("id", 1)], unique=True)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_completions_keep_the_first_completed_at() -> None:
+    async with _temporary_database() as db:
+        live = Live(db)
+        await _completion_indexes(db)
+        stamps = [f"2026-10-06T09:00:{second:02d}+00:00" for second in range(8)]
+
+        results = await asyncio.gather(
+            *(live.learning.complete_progress(USER, "p1", "t1", stamp) for stamp in stamps)
+        )
+
+        docs = [doc async for doc in db.learning_progress.find({"topic_id": "t1"})]
+        assert len(docs) == 1
+        assert docs[0]["status"] == "completed"
+        assert set(results) == {docs[0]["completed_at"]}
+        assert docs[0]["completed_at"] in stamps
+
+        # Later completions never move it.
+        assert await live.learning.complete_progress(USER, "p1", "t1", "2026-12-31T00:00:00+00:00") == docs[0]["completed_at"]
+
+
+@pytest.mark.asyncio
+async def test_completion_replaces_a_progress_record_that_is_not_completed() -> None:
+    async with _temporary_database() as db:
+        live = Live(db)
+        await db.learning_progress.insert_one(
+            {"user_id": USER, "project_id": "p1", "topic_id": "t1", "status": "in_progress", "completed_at": None}
+        )
+
+        stored = await live.learning.complete_progress(USER, "p1", "t1", "2026-10-06T09:00:00+00:00")
+
+        doc = await db.learning_progress.find_one({"topic_id": "t1"})
+        assert stored == doc["completed_at"] == "2026-10-06T09:00:00+00:00"
+        assert doc["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_project_progress_is_calculated_from_real_completions() -> None:
+    async with _temporary_database() as db:
+        live = Live(db)
+        await _completion_indexes(db)
+        learning_service = LearningService(
+            live.projects, live.learning, ActivityService(ActivityRepository(db))
+        )
+        project_id = await live.create()
+        await live.generation.run(GenerationClaim(user_id=USER, project_id=project_id, attempt=1, trigger="create"))
+        topics = (await learning_service.get_project_learning(USER, project_id)).topics
+        assert len(topics) >= 2
+
+        assert (await live.project_service.get_project(USER, project_id)).progress == 0
+
+        first, second = await asyncio.gather(
+            learning_service.complete_topic(USER, project_id, topics[0].id),
+            learning_service.complete_topic(USER, project_id, topics[0].id),
+        )
+        assert first.completedAt == second.completedAt
+        assert await db.activity_events.count_documents({}) == 1
+        # Another user's completion of the same topic never counts.
+        await live.learning.complete_progress("someone-else", project_id, topics[1].id, "2026-10-06T09:00:00+00:00")
+
+        listed = await live.project_service.list_projects(USER)
+        assert [project.progress for project in listed] == [learning_percent(1, len(topics))]
+        assert (await live.project_service.get_project(USER, project_id)).progress == learning_percent(1, len(topics))
+        # Calculated on read only: the stored legacy field is untouched.
+        assert (await live.doc(project_id))["progress"] == 0
+
+        for topic in topics[1:]:
+            await learning_service.complete_topic(USER, project_id, topic.id)
+        assert (await live.project_service.get_project(USER, project_id)).progress == 100

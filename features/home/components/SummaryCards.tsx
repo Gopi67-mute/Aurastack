@@ -55,7 +55,9 @@ export function SummaryCards({
         label="Momentum"
         value={String(momentum.streakDays)}
         unit={momentum.streakDays === 1 ? "day" : "days"}
-        caption={`${momentum.tasksDone} tasks done`}
+        caption={`${momentum.topicsThisWeek} ${
+          momentum.topicsThisWeek === 1 ? "topic" : "topics"
+        } this week`}
         onPress={onMomentumPress}
       />
     </View>

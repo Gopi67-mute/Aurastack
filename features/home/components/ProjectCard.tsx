@@ -22,7 +22,7 @@ export const PROJECT_ICONS:Record<ProjectIconKey, LucideIcon> = {
 };
 
 /** Neutral icon for projects that have no generated icon yet. */
-export function getProjectIcon(iconKey?: ProjectIconKey): LucideIcon {
+export function getProjectIcon(iconKey?: ProjectIconKey | null): LucideIcon {
   return iconKey ? PROJECT_ICONS[iconKey] : Layers;
 }
 

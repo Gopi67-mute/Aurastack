@@ -7,8 +7,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ErrorState } from "../../../components/ErrorState";
 import { LoadingState } from "../../../components/LoadingState";
 import { LearningScreenHeader } from "../../../features/learning/components/LearningScreenHeader";
+import { TopicCompletionActions } from "../../../features/learning/components/TopicCompletionActions";
 import { TopicSection } from "../../../features/learning/components/TopicSection";
 import { useLearningTopic } from "../../../features/learning/hooks/useLearningTopic";
+import { getNextTopic } from "../../../features/learning/utils/getNextTopic";
 import { getParam } from "../../../features/learning/utils/getParam";
 import { colors } from "../../../theme/colors";
 
@@ -25,6 +27,20 @@ export default function LearningTopicScreen() {
 
   const goBack = () => (router.canGoBack() ? router.back() : router.replace("/learning"));
   const isCompleted = topic?.status === "completed";
+  const nextTopic = project ? getNextTopic(project.topics) : undefined;
+
+  // Replace rather than push, so moving through a plan never piles topics on the stack.
+  const openTopic = (nextTopicId: string) => {
+    if (!project) return;
+    router.replace({
+      pathname: "/learning/[projectId]/[topicId]",
+      params: { projectId: project.projectId, topicId: nextTopicId },
+    });
+  };
+  const backToPlan = () => {
+    if (!project) return;
+    router.replace({ pathname: "/learning/[projectId]", params: { projectId: project.projectId } });
+  };
   const isLoading = !topic && (status === "idle" || status === "loading");
 
   return (
@@ -89,6 +105,14 @@ export default function LearningTopicScreen() {
 
             {/* The completion did not persist, so never leave it looking saved. */}
             {completeError ? <ErrorState message={completeError} onRetry={markCompleted} /> : null}
+
+            {isCompleted ? (
+              <TopicCompletionActions
+                nextTopic={nextTopic}
+                onOpenTopic={openTopic}
+                onBackToPlan={backToPlan}
+              />
+            ) : null}
           </View>
         ) : (
           <Text className="mt-6 text-body-md text-n300">
