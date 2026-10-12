@@ -5,6 +5,8 @@ a live MongoDB connection.
 
 from typing import Any
 
+from pymongo.errors import ServerSelectionTimeoutError
+
 
 def _set_fields(doc: dict[str, Any], updates: dict[str, Any]) -> None:
     """Mongo `$set` semantics, including dotted paths into embedded documents."""
@@ -223,6 +225,80 @@ class FakeLearningRepository:
             del self._progress[key]
 
 
+class FakeBlueprintRepository:
+    """One document per project id, like the unique `project_id` index."""
+
+    def __init__(self) -> None:
+        self._docs: dict[str, dict[str, Any]] = {}
+
+    async def get_for_project(self, project_id: str, user_id: str) -> dict[str, Any] | None:
+        doc = self._docs.get(project_id)
+        if doc is not None and doc["user_id"] == user_id:
+            return doc
+        return None
+
+    async def claim(
+        self,
+        project_id: str,
+        user_id: str,
+        *,
+        curriculum_version: int,
+        schema_version: str,
+        expired_before: str,
+        started_at: str,
+    ) -> dict[str, Any] | None:
+        # No await between the check and the write, so this is atomic under
+        # asyncio exactly as the upserting find_one_and_update is in MongoDB.
+        doc = self._docs.get(project_id)
+        if doc is None:
+            doc = {"project_id": project_id, "user_id": user_id, "attempt": 0, "created_at": started_at}
+            self._docs[project_id] = doc
+        elif doc["user_id"] != user_id or not (
+            doc["status"] == "failed"
+            or (doc["status"] == "generating" and doc["started_at"] < expired_before)
+            or doc.get("curriculum_version") != curriculum_version
+            or doc.get("schema_version") != schema_version
+        ):
+            return None  # The real upsert's insert hits the unique index here.
+        doc["attempt"] += 1
+        doc.update(
+            {
+                "status": "generating",
+                "curriculum_version": curriculum_version,
+                "schema_version": schema_version,
+                "started_at": started_at,
+                "completed_at": None,
+                "failure_reason": None,
+                "blueprint": None,
+                "meta": None,
+                "updated_at": started_at,
+            }
+        )
+        return doc
+
+    async def finalize(
+        self,
+        project_id: str,
+        user_id: str,
+        attempt: int,
+        curriculum_version: int,
+        updates: dict[str, Any],
+    ) -> bool:
+        doc = await self.get_for_project(project_id, user_id)
+        if (
+            doc is None
+            or doc["status"] != "generating"
+            or doc["attempt"] != attempt
+            or doc["curriculum_version"] != curriculum_version
+        ):
+            return False
+        _set_fields(doc, updates)
+        return True
+
+    async def delete_for_project(self, project_id: str) -> None:
+        self._docs.pop(project_id, None)
+
+
 class FakeActivityRepository:
     def __init__(self) -> None:
         self.events: list[dict[str, Any]] = []
@@ -243,3 +319,56 @@ class FakeActivityRepository:
 
     async def delete_for_project(self, project_id: str) -> None:
         self.events = [event for event in self.events if event["project_id"] != project_id]
+
+
+class FakeMentorConversationRepository:
+    """One document per (user_id, context_key), like the unique index.
+
+    Names in `failing` raise like an unreachable MongoDB, for storage-error
+    tests.
+    """
+
+    def __init__(self) -> None:
+        self.docs: dict[tuple[str, str], dict[str, Any]] = {}
+        self.failing: set[str] = set()
+
+    def _check(self, method: str) -> None:
+        if method in self.failing:
+            raise ServerSelectionTimeoutError("No servers found")
+
+    async def get(self, user_id: str, context_key: str) -> dict[str, Any] | None:
+        self._check("get")
+        return self.docs.get((user_id, context_key))
+
+    async def append_exchange(
+        self,
+        user_id: str,
+        context_key: str,
+        project_id: str | None,
+        messages: list[dict[str, Any]],
+        *,
+        now: str,
+        max_messages: int,
+    ) -> bool:
+        self._check("append_exchange")
+        # No await between the check and the write, so this is atomic under
+        # asyncio exactly as the upserting update_one is in MongoDB.
+        doc = self.docs.get((user_id, context_key))
+        if doc is None:
+            doc = {
+                "user_id": user_id,
+                "context_key": context_key,
+                "project_id": project_id,
+                "messages": [],
+                "created_at": now,
+            }
+            self.docs[(user_id, context_key)] = doc
+        elif any(message["id"] == messages[0]["id"] for message in doc["messages"]):
+            return False
+        doc["messages"] = (doc["messages"] + [dict(message) for message in messages])[-max_messages:]
+        doc["updated_at"] = now
+        return True
+
+    async def delete(self, user_id: str, context_key: str) -> None:
+        self._check("delete")
+        self.docs.pop((user_id, context_key), None)

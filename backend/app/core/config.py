@@ -16,6 +16,12 @@ _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 #: variable: it must stay above the generation timeout, which Settings enforces.
 GENERATION_LEASE_SECONDS = 120
 
+#: Longest a mentor reply may take before the request fails with a timeout.
+#: A chat request is answered synchronously, so this stays well below the
+#: generation timeout; the mobile client waits a little longer than this
+#: (MENTOR_REQUEST_TIMEOUT_MS in features/mentor/constants/mentor.ts).
+MENTOR_TIMEOUT_SECONDS = 30
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(

@@ -1,5 +1,5 @@
 import { useSignIn, useSignUp } from "@clerk/expo";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import type { AuthMode } from "../types/auth";
 
@@ -63,10 +63,13 @@ export function useEmailAuth(mode: AuthMode, onVerified: () => void): UseEmailAu
     [mode, signIn, signUp]
   );
 
-  const verifyCode = useCallback(
-    async (code: string) => {
-      setCodeError(null);
+  // The code input stays editable while a code is verifying, so a second full
+  // code could otherwise start a parallel verify and fire onVerified (a screen
+  // replace) twice. Stays set after success: the screen is on its way out.
+  const isVerifyingRef = useRef(false);
 
+  const finishVerification = useCallback(
+    async (code: string): Promise<boolean> => {
       if (mode === "sign-up") {
         const { error } = await signUp.verifications.verifyEmailCode({ code });
         if (error) {
@@ -102,15 +105,36 @@ export function useEmailAuth(mode: AuthMode, onVerified: () => void): UseEmailAu
           return false;
         }
       }
+      return true;
+    },
+    [mode, signIn, signUp]
+  );
 
-      setPendingEmail(null);
+  const verifyCode = useCallback(
+    async (code: string) => {
+      if (isVerifyingRef.current) return false;
+      isVerifyingRef.current = true;
+      setCodeError(null);
+
+      let verified = false;
+      try {
+        verified = await finishVerification(code);
+      } finally {
+        if (!verified) isVerifyingRef.current = false;
+      }
+      if (!verified) return false;
+
+      // pendingEmail is deliberately left set: onVerified replaces this
+      // screen, which unmounts the modal with it. Clearing it here only adds
+      // a redundant update to a screen that is being removed.
       onVerified();
       return true;
     },
-    [mode, signIn, signUp, onVerified]
+    [finishVerification, onVerified]
   );
 
   const cancelVerification = useCallback(() => {
+    isVerifyingRef.current = false;
     setPendingEmail(null);
     setCodeError(null);
     if (mode === "sign-up") {

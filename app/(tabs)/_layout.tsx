@@ -90,6 +90,9 @@ export default function TabsLayout() {
         name="mentor"
         options={{
           title: "AI Mentor",
+          // The composer sits at the bottom: keep the tab bar from riding up
+          // with the keyboard and covering it (notably on Android).
+          tabBarHideOnKeyboard: true,
           tabBarIcon: ({ color, size }) => (
             <Sparkles color={color} size={size} />
           ),

@@ -7,4 +7,5 @@ export const images = {
   authMascot: require("../assets/images/aura -oauth.png"),
   auraBotThumbsUp: require("../assets/images/thumps-up.png"),
   auraBotWave: require("../assets/images/empty-state.png"),
+  auraBotFeatures: require("../assets/images/3rd-screen.png"),
 } as const;

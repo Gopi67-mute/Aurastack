@@ -1,102 +1,74 @@
-import { useAuth, useClerk, useUser } from "@clerk/expo";
 import { useRouter } from "expo-router";
-import { LogOut, User as UserIcon } from "lucide-react-native";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { StatusBar } from "expo-status-bar";
+import { ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { resetUserStores } from "../../store/resetUserStores";
-import { colors } from "../../theme/colors";
-
-// useAppBootstrap recomputes the shared destination asynchronously when
-// isSignedIn flips (see hooks/useAppBootstrap.ts), so this waits a beat
-// past that flip before re-entering "/" — otherwise index.tsx could read a
-// stale destination and redirect straight back into the tabs.
-const NAVIGATE_AFTER_SIGN_OUT_DELAY_MS = 150;
+import { ErrorState } from "../../components/ErrorState";
+import { LoadingState } from "../../components/LoadingState";
+import { AccountSection } from "../../features/profile/components/AccountSection";
+import { GlowBackdrop } from "../../features/profile/components/GlowBackdrop";
+import { ProfileHeader } from "../../features/profile/components/ProfileHeader";
+import { ProfileRecentProjects } from "../../features/profile/components/ProfileRecentProjects";
+import { WorkspaceStatsCard } from "../../features/profile/components/WorkspaceStatsCard";
+import { useProfileIdentity } from "../../features/profile/hooks/useProfileIdentity";
+import { useProfileOverview } from "../../features/profile/hooks/useProfileOverview";
+import { useSignOut } from "../../features/profile/hooks/useSignOut";
 
 export default function Profile() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { signOut } = useClerk();
-  const { isSignedIn } = useAuth();
-  const { user } = useUser();
-
-  const [isSigningOut, setIsSigningOut] = useState(false);
-  const [signOutError, setSignOutError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isSigningOut || isSignedIn !== false) return;
-
-    const timer = setTimeout(() => {
-      router.replace("/");
-    }, NAVIGATE_AFTER_SIGN_OUT_DELAY_MS);
-
-    return () => clearTimeout(timer);
-  }, [isSigningOut, isSignedIn, router]);
-
-  async function handleSignOut() {
-    if (isSigningOut) return;
-    setSignOutError(null);
-    setIsSigningOut(true);
-    try {
-      await signOut();
-      // Only after success: a failed sign-out keeps the user and their data.
-      resetUserStores();
-      // The effect above navigates once isSignedIn flips to false.
-    } catch {
-      setIsSigningOut(false);
-      setSignOutError("Something went wrong signing out. Please try again.");
-    }
-  }
+  const identity = useProfileIdentity();
+  const { stats, recentProjects, hasProjects, isLoading, error, refresh } = useProfileOverview();
+  const { requestSignOut, isSigningOut, error: signOutError } = useSignOut();
 
   return (
-    <View
-      className="flex-1 bg-n900 px-6"
-      style={{ paddingTop: insets.top + 16 }}
-    >
-      <Text className="text-h1 text-white">Profile</Text>
+    <View className="flex-1 bg-n900">
+      <StatusBar style="light" />
+      <GlowBackdrop />
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{
+          paddingTop: insets.top + 16,
+          paddingHorizontal: 16,
+          paddingBottom: 24,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        <ProfileHeader identity={identity} />
 
-      <View className="mt-6 flex-row items-center gap-4 rounded-xl border border-n700 bg-n800 p-4">
-        <View className="w-12 h-12 rounded-full items-center justify-center bg-n700">
-          <UserIcon size={24} color={colors.neutral.n300} strokeWidth={1.75} />
+        <View className="mt-6 gap-4">
+          {isLoading ? (
+            <LoadingState label="your workspace" />
+          ) : (
+            <>
+              {/* Figures may be partial when a read failed, so say so. */}
+              {error ? <ErrorState message={error} onRetry={refresh} /> : null}
+              <WorkspaceStatsCard stats={stats} />
+              {/* Without a loaded list, "no projects" would be a guess. */}
+              {hasProjects ? (
+                <ProfileRecentProjects
+                  items={recentProjects}
+                  onViewAllPress={() => router.navigate("/projects")}
+                  onProjectPress={(project) =>
+                    router.push({
+                      pathname: "/projects/[projectId]",
+                      params: { projectId: project.id },
+                    })
+                  }
+                  onCreatePress={() => router.push("/create-project")}
+                />
+              ) : null}
+            </>
+          )}
+
+          {/* Outside the loading branch: signing out never waits on the API. */}
+          <AccountSection
+            onSignOutPress={requestSignOut}
+            isSigningOut={isSigningOut}
+            signOutError={signOutError}
+          />
         </View>
-        <View className="flex-1">
-          <Text className="text-h4 text-white" numberOfLines={1}>
-            {user?.fullName || user?.primaryEmailAddress?.emailAddress || "Your account"}
-          </Text>
-          {user?.primaryEmailAddress ? (
-            <Text className="mt-1 text-body-sm text-n300" numberOfLines={1}>
-              {user.primaryEmailAddress.emailAddress}
-            </Text>
-          ) : null}
-        </View>
-      </View>
-
-      <View className="mt-8">
-        <Text className="text-body-sm text-n300 mb-3">Account</Text>
-
-        <Pressable
-          onPress={handleSignOut}
-          disabled={isSigningOut}
-          accessibilityRole="button"
-          accessibilityLabel="Sign out"
-          className={`flex-row items-center justify-between rounded-xl border border-error/30 bg-error/10 px-4 py-4 ${
-            isSigningOut ? "opacity-60" : ""
-          }`}
-        >
-          <View className="flex-row items-center gap-3">
-            <LogOut size={20} color={colors.semantic.error} />
-            <Text className="text-h4 text-error">Sign Out</Text>
-          </View>
-          {isSigningOut ? <ActivityIndicator color={colors.semantic.error} /> : null}
-        </Pressable>
-
-        {signOutError ? (
-          <Text className="mt-3 text-body-sm text-error text-center">
-            {signOutError}
-          </Text>
-        ) : null}
-      </View>
+      </ScrollView>
     </View>
   );
 }

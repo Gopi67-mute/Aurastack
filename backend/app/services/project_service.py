@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from app.core.config import GENERATION_LEASE_SECONDS
 from app.repositories.activity_repository import ActivityRepository
+from app.repositories.blueprint_repository import BlueprintRepository
 from app.repositories.learning_repository import LearningRepository
 from app.repositories.project_repository import ProjectRepository
 from app.schemas.project import Project, ProjectCreateRequest, ProjectStatus, ProjectUpdateRequest
@@ -74,10 +75,12 @@ class ProjectService:
         project_repo: ProjectRepository,
         learning_repo: LearningRepository,
         activity_repo: ActivityRepository,
+        blueprint_repo: BlueprintRepository,
     ) -> None:
         self._projects = project_repo
         self._learning = learning_repo
         self._activity = activity_repo
+        self._blueprints = blueprint_repo
 
     async def list_projects(self, user_id: str) -> list[Project]:
         docs = await self._projects.list_for_user(user_id)
@@ -159,6 +162,9 @@ class ProjectService:
             raise ProjectNotFoundError(project_id)
         await self._learning.delete_for_project(project_id)
         await self._activity.delete_for_project(project_id)
+        # A blueprint run racing this delete cleans up after itself; see
+        # BlueprintService._generate.
+        await self._blueprints.delete_for_project(project_id)
 
     async def _with_progress(self, user_id: str, docs: list[dict[str, Any]]) -> list[Project]:
         """Projects with their server-calculated learning progress.

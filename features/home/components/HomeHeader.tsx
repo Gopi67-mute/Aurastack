@@ -1,19 +1,23 @@
 import { useUser } from "@clerk/expo";
 import { Image } from "expo-image";
 import { User as UserIcon } from "lucide-react-native";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 
 import { colors } from "../../../theme/colors";
 
 const AVATAR_SIZE = 44;
 const FALLBACK_NAME = "there";
 
+interface HomeHeaderProps {
+  onProfilePress: () => void;
+}
+
 /**
- * Greeting + top-right profile picture. The avatar uses Clerk's
- * `user.imageUrl` from useUser(), the same authenticated-user source as the
- * Profile tab (which has no image of its own yet, only an icon placeholder).
+ * Greeting + top-right profile picture, which opens the Profile tab. The
+ * avatar uses Clerk's `user.imageUrl` from useUser(), the same
+ * authenticated-user source as the Profile screen.
  */
-export function HomeHeader() {
+export function HomeHeader({ onProfilePress }: HomeHeaderProps) {
   const { user } = useUser();
   const firstName = user?.firstName?.trim() || FALLBACK_NAME;
 
@@ -28,9 +32,12 @@ export function HomeHeader() {
         </Text>
       </View>
 
-      <View
-        accessibilityLabel="Your profile picture"
-        className="items-center justify-center overflow-hidden rounded-full border border-n600 bg-n700"
+      <Pressable
+        onPress={onProfilePress}
+        accessibilityRole="button"
+        accessibilityLabel="Open your profile"
+        hitSlop={4}
+        className="items-center justify-center overflow-hidden rounded-full border border-n600 bg-n700 active:opacity-80"
         style={{ width: AVATAR_SIZE, height: AVATAR_SIZE }}
       >
         {user?.imageUrl ? (
@@ -42,7 +49,7 @@ export function HomeHeader() {
         ) : (
           <UserIcon size={22} color={colors.neutral.n300} strokeWidth={1.75} />
         )}
-      </View>
+      </Pressable>
     </View>
   );
 }

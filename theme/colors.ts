@@ -31,8 +31,23 @@ export const neutral = {
   white: "#FFFFFF",
 } as const;
 
+/**
+ * Project workspace section accents (Tech Stack, Roadmap, Architecture,
+ * Learning). Each is at least 4.5:1 against n700 and n800, so it reads as
+ * text, icon or border on the app's dark surfaces; tints use opacity
+ * modifiers (e.g. bg-section-tech/10). They identify a section only and
+ * never stand in for the semantic success, warning or error colors.
+ */
+export const section = {
+  techStack: "#60A5FA",
+  roadmap: "#FBBF24",
+  architecture: "#34D399",
+  learning: "#A78BFA",
+} as const;
+
 export const colors = {
   brand,
   semantic,
   neutral,
+  section,
 } as const;

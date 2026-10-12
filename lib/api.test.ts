@@ -79,6 +79,46 @@ describe("api request timeout", () => {
     expect(jest.getTimerCount()).toBe(0);
   });
 
+  it("times out a getToken that never settles, without sending the request", async () => {
+    const hungGetToken = () => new Promise<string | null>(() => {});
+
+    const request = api.get("/api/v1/projects", hungGetToken);
+    const rejection = expect(request).rejects.toEqual(
+      new ApiError("The server took too long to respond. Please try again.", 0),
+    );
+
+    await jest.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+    await rejection;
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it("shares one budget between getToken and the request", async () => {
+    let answerToken: (token: string) => void = () => {};
+    const slowGetToken = () => new Promise<string | null>((resolve) => (answerToken = resolve));
+    mockFetch.mockImplementation(hang);
+
+    const request = api.get("/api/v1/projects", slowGetToken);
+    const rejection = expect(request).rejects.toBeInstanceOf(ApiError);
+
+    await jest.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS - 1000);
+    answerToken("late-token");
+    await jest.advanceTimersByTimeAsync(0);
+    expect(mockFetch.mock.calls[0][1].headers).toMatchObject({ Authorization: "Bearer late-token" });
+
+    await jest.advanceTimersByTimeAsync(1000);
+    await rejection;
+    expect(mockFetch.mock.calls[0][1].signal?.aborted).toBe(true);
+  });
+
+  it("passes a getToken failure through unchanged", async () => {
+    const failure = new Error("clerk unavailable");
+
+    await expect(api.get("/api/v1/projects", () => Promise.reject(failure))).rejects.toBe(failure);
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
   it("still reports an unreachable server as a network error", async () => {
     mockFetch.mockRejectedValueOnce(new TypeError("Network request failed"));
 

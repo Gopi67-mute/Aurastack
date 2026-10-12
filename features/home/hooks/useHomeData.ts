@@ -4,15 +4,10 @@ import type { RemoteStatus } from "../../../lib/remoteData";
 import { useLearningOverview } from "../../learning/hooks/useLearningOverview";
 import { useMomentum } from "../../progress/hooks/useMomentum";
 import { useProjects } from "../../projects/hooks/useProjects";
-import type { Project } from "../../projects/types/projects";
+import { isActiveProject } from "../../projects/utils/isActiveProject";
 import type { HomeData } from "../types/home";
 
 const RECENT_PROJECTS_LIMIT = 3;
-
-/** Still generating, or ready with learning left. A failed project is not active. */
-function isActiveProject(project: Project): boolean {
-  return project.status === "generating" || (project.status === "ready" && project.progress < 100);
-}
 
 /**
  * Supplies Home dashboard data. Projects, learning and momentum all come from

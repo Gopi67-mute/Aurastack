@@ -1,5 +1,5 @@
 import { X } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BackHandler,
   Keyboard,
@@ -36,6 +36,7 @@ export function VerificationModal({
   const { code, inputRef, handleChangeText, focus, reset } =
     useVerificationCode(onVerify);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardHeightRef = useRef(0);
 
   useEffect(() => {
     if (visible) {
@@ -62,14 +63,24 @@ export function VerificationModal({
     const hideEvent =
       Platform.OS === "android" ? "keyboardDidHide" : "keyboardWillHide";
 
-    const showSubscription = Keyboard.addListener(showEvent, (event) => {
+    // Under Fabric, configureNext stays pending until the next commit that
+    // changes any view, whatever it is. Android can repeat a keyboard event
+    // with an unchanged height; React then skips the render and the animation
+    // would attach to an unrelated later commit, such as the navigation that
+    // replaces this screen. So only animate a real height change.
+    const animateKeyboardHeight = (height: number) => {
+      if (height === keyboardHeightRef.current) return;
+      keyboardHeightRef.current = height;
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setKeyboardHeight(event.endCoordinates.height);
-    });
-    const hideSubscription = Keyboard.addListener(hideEvent, () => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setKeyboardHeight(0);
-    });
+      setKeyboardHeight(height);
+    };
+
+    const showSubscription = Keyboard.addListener(showEvent, (event) =>
+      animateKeyboardHeight(event.endCoordinates.height),
+    );
+    const hideSubscription = Keyboard.addListener(hideEvent, () =>
+      animateKeyboardHeight(0),
+    );
 
     return () => {
       showSubscription.remove();

@@ -29,6 +29,7 @@ from app.ai.deterministic_provider import DeterministicProvider
 from app.core.config import Settings
 from app.db.migrations import MigrationReport, migrate_generation_lifecycle
 from app.repositories.activity_repository import ActivityRepository
+from app.repositories.blueprint_repository import BlueprintRepository
 from app.repositories.learning_repository import LearningRepository
 from app.repositories.project_repository import ProjectRepository
 from app.schemas.project import ProjectCreateRequest
@@ -94,7 +95,9 @@ class Live:
         self.db = db
         self.projects = ProjectRepository(db)
         self.learning = LearningRepository(db)
-        self.project_service = ProjectService(self.projects, self.learning, _UnusedActivityRepository())  # type: ignore[arg-type]
+        self.project_service = ProjectService(
+            self.projects, self.learning, _UnusedActivityRepository(), BlueprintRepository(db)  # type: ignore[arg-type]
+        )
         self.generation = GenerationService(
             self.projects, self.learning, DeterministicProvider(), timeout_seconds=30
         )

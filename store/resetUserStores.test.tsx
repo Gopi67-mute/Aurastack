@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
+import { Alert } from "react-native";
 
 import Profile from "../app/(tabs)/profile";
 import { getLearning } from "../features/learning/services/getLearning";
@@ -21,10 +22,12 @@ jest.mock("lucide-react-native", () => new Proxy({}, { get: () => () => null }))
 jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
-jest.mock("expo-router", () => ({ useRouter: () => ({ replace: jest.fn() }) }));
+const mockReplace = jest.fn<void, [string]>();
+jest.mock("expo-router", () => ({ useRouter: () => ({ replace: mockReplace }) }));
 const mockSignOut = jest.fn<Promise<void>, []>();
+let mockIsSignedIn: boolean | undefined = true;
 jest.mock("@clerk/expo", () => ({
-  useAuth: () => ({ isSignedIn: true }),
+  useAuth: () => ({ isSignedIn: mockIsSignedIn, getToken: () => Promise.resolve("token") }),
   useClerk: () => ({ signOut: mockSignOut }),
   useUser: () => ({ user: null }),
 }));
@@ -67,12 +70,23 @@ function expectEmptyStores(): void {
 beforeEach(() => {
   jest.useFakeTimers();
   for (const mock of [mockGetProjects, mockGetLearning, mockGetMomentum, mockSignOut]) mock.mockReset();
+  mockReplace.mockReset();
+  mockIsSignedIn = true;
+  // Profile reads the stores on mount; an unloaded user has no projects yet.
+  mockGetProjects.mockResolvedValue([]);
+  mockGetLearning.mockResolvedValue([]);
+  // Profile asks before signing out; these tests confirm (cancel is covered
+  // in features/profile/components/ProfileScreen.test.tsx).
+  jest.spyOn(Alert, "alert").mockImplementation((_title, _message, buttons) => {
+    buttons?.find((button) => button.style === "destructive")?.onPress?.();
+  });
   resetUserStores();
 });
 
 afterEach(() => {
   resetUserStores();
   jest.useRealTimers();
+  jest.restoreAllMocks();
 });
 
 describe("resetUserStores", () => {
@@ -148,5 +162,47 @@ describe("Profile sign-out", () => {
 
     expect(useProjectStore.getState().projects).toHaveLength(1);
     expect(screen.getByText("Something went wrong signing out. Please try again.")).toBeTruthy();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it("replaces straight to sign-in, once, after Clerk reports signed-out", async () => {
+    await signInAndLoad("a");
+    mockSignOut.mockResolvedValueOnce();
+    render(<Profile />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Sign out"));
+    });
+    // signOut resolved, but Clerk still reports the old session: wait for it.
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    mockIsSignedIn = false;
+    screen.rerender(<Profile />);
+    screen.rerender(<Profile />);
+    await act(async () => {
+      await jest.runOnlyPendingTimersAsync();
+    });
+
+    // No hop through "/" (whose <Redirect> stacked a second replace).
+    expect(mockReplace.mock.calls).toEqual([["/sign-in"]]);
+    expectEmptyStores();
+  });
+
+  it("does not navigate when Clerk is already signed out but sign-out has not finished", async () => {
+    let finishSignOut: () => void = () => {};
+    mockSignOut.mockReturnValueOnce(new Promise((resolve) => (finishSignOut = resolve)));
+    render(<Profile />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Sign out"));
+    });
+    mockIsSignedIn = false;
+    screen.rerender(<Profile />);
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishSignOut();
+    });
+    expect(mockReplace.mock.calls).toEqual([["/sign-in"]]);
   });
 });

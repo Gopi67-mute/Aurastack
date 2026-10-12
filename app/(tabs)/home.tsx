@@ -29,7 +29,8 @@ export default function Home() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <HomeHeader />
+        {/* navigate, not push: switches to the existing Profile tab. */}
+        <HomeHeader onProfilePress={() => router.navigate("/profile")} />
 
         {isFirstLoad ? (
           <View className="mt-6">

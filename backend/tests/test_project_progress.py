@@ -13,7 +13,12 @@ from app.services.activity_service import ActivityService
 from app.services.learning_service import LearningService
 from app.services.project_service import GENERATION_LEASE, ProjectService
 from app.utils.learning_progress import learning_percent
-from tests.fakes import FakeActivityRepository, FakeLearningRepository, FakeProjectRepository
+from tests.fakes import (
+    FakeActivityRepository,
+    FakeBlueprintRepository,
+    FakeLearningRepository,
+    FakeProjectRepository,
+)
 
 USER = "user-a"
 OTHER_USER = "user-b"
@@ -25,7 +30,9 @@ class Store:
         self.projects = FakeProjectRepository()
         self.learning = learning or FakeLearningRepository()
         self.activity = FakeActivityRepository()
-        self.project_service = ProjectService(self.projects, self.learning, self.activity)
+        self.project_service = ProjectService(
+            self.projects, self.learning, self.activity, FakeBlueprintRepository()
+        )
         self.learning_service = LearningService(
             self.projects, self.learning, ActivityService(self.activity)
         )

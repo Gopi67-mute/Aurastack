@@ -6,7 +6,13 @@ from app.api import deps
 from app.core.config import Settings, get_settings
 from app.main import app
 from app.middleware.auth import get_current_user_id
-from tests.fakes import FakeActivityRepository, FakeLearningRepository, FakeProjectRepository
+from tests.fakes import (
+    FakeActivityRepository,
+    FakeBlueprintRepository,
+    FakeLearningRepository,
+    FakeMentorConversationRepository,
+    FakeProjectRepository,
+)
 
 
 def _fake_current_user_id(x_test_user_id: str = Header(default="user-a")) -> str:
@@ -33,6 +39,8 @@ def repos() -> dict[str, object]:
         "project": FakeProjectRepository(),
         "learning": FakeLearningRepository(),
         "activity": FakeActivityRepository(),
+        "blueprint": FakeBlueprintRepository(),
+        "mentor": FakeMentorConversationRepository(),
     }
 
 
@@ -41,6 +49,8 @@ def client(repos: dict[str, object]) -> TestClient:
     app.dependency_overrides[deps.get_project_repository] = lambda: repos["project"]
     app.dependency_overrides[deps.get_learning_repository] = lambda: repos["learning"]
     app.dependency_overrides[deps.get_activity_repository] = lambda: repos["activity"]
+    app.dependency_overrides[deps.get_blueprint_repository] = lambda: repos["blueprint"]
+    app.dependency_overrides[deps.get_mentor_conversation_repository] = lambda: repos["mentor"]
     app.dependency_overrides[get_current_user_id] = _fake_current_user_id
     app.dependency_overrides[get_settings] = _test_settings
 

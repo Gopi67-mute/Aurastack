@@ -26,7 +26,10 @@ export interface Project {
   /** User-provided idea. Absent on legacy mock projects. */
   description?: string;
   platforms?: readonly ProjectPlatform[];
-  /** Absent until a generated blueprint exists. */
+  /**
+   * User-entered technology preferences from project creation. Not the
+   * generated recommendation, which is the blueprint's own techStack.
+   */
   techStack?: readonly string[];
   /** Null until a generated icon exists. */
   iconKey?: ProjectIconKey | null;

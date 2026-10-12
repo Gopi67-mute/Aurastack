@@ -1,6 +1,9 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -12,6 +15,7 @@ from app.repositories.learning_repository import LearningRepository
 from app.repositories.project_repository import ProjectRepository
 
 configure_logging()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -36,6 +40,22 @@ app.add_middleware(
 )
 
 app.include_router(api_v1_router)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # Which fields failed and why, so a client/server contract mismatch is
+    # diagnosable from the server log. Never the rejected values (they can be
+    # user content) or headers. The 422 response itself is FastAPI's default.
+    logger.warning(
+        "Request validation failed: %s %s errors=%s",
+        request.method,
+        request.url.path,
+        "; ".join(
+            f"{'.'.join(str(part) for part in error['loc'])}:{error['type']}" for error in exc.errors()
+        ),
+    )
+    return await request_validation_exception_handler(request, exc)
 
 
 @app.exception_handler(Exception)

@@ -3,14 +3,18 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.ai.factory import create_provider
 from app.ai.provider import AIProvider
-from app.core.config import Settings, get_settings
+from app.core.config import MENTOR_TIMEOUT_SECONDS, Settings, get_settings
 from app.db.mongodb import get_database
 from app.repositories.activity_repository import ActivityRepository
+from app.repositories.blueprint_repository import BlueprintRepository
 from app.repositories.learning_repository import LearningRepository
+from app.repositories.mentor_conversation_repository import MentorConversationRepository
 from app.repositories.project_repository import ProjectRepository
 from app.services.activity_service import ActivityService
+from app.services.blueprint_service import BlueprintService
 from app.services.generation_service import GenerationService
 from app.services.learning_service import LearningService
+from app.services.mentor_service import MentorService
 from app.services.project_service import ProjectService
 
 
@@ -26,6 +30,16 @@ def get_activity_repository(db: AsyncIOMotorDatabase = Depends(get_database)) ->
     return ActivityRepository(db)
 
 
+def get_blueprint_repository(db: AsyncIOMotorDatabase = Depends(get_database)) -> BlueprintRepository:
+    return BlueprintRepository(db)
+
+
+def get_mentor_conversation_repository(
+    db: AsyncIOMotorDatabase = Depends(get_database),
+) -> MentorConversationRepository:
+    return MentorConversationRepository(db)
+
+
 def get_activity_service(
     activity_repo: ActivityRepository = Depends(get_activity_repository),
 ) -> ActivityService:
@@ -36,8 +50,9 @@ def get_project_service(
     project_repo: ProjectRepository = Depends(get_project_repository),
     learning_repo: LearningRepository = Depends(get_learning_repository),
     activity_repo: ActivityRepository = Depends(get_activity_repository),
+    blueprint_repo: BlueprintRepository = Depends(get_blueprint_repository),
 ) -> ProjectService:
-    return ProjectService(project_repo, learning_repo, activity_repo)
+    return ProjectService(project_repo, learning_repo, activity_repo, blueprint_repo)
 
 
 def get_learning_service(
@@ -63,4 +78,37 @@ def get_generation_service(
         learning_repo,
         provider,
         timeout_seconds=settings.ai_generation_timeout_seconds,
+    )
+
+
+def get_blueprint_service(
+    project_repo: ProjectRepository = Depends(get_project_repository),
+    learning_repo: LearningRepository = Depends(get_learning_repository),
+    blueprint_repo: BlueprintRepository = Depends(get_blueprint_repository),
+    provider: AIProvider = Depends(get_ai_provider),
+    settings: Settings = Depends(get_settings),
+) -> BlueprintService:
+    return BlueprintService(
+        project_repo,
+        learning_repo,
+        blueprint_repo,
+        provider,
+        timeout_seconds=settings.ai_generation_timeout_seconds,
+    )
+
+
+def get_mentor_service(
+    project_service: ProjectService = Depends(get_project_service),
+    blueprint_service: BlueprintService = Depends(get_blueprint_service),
+    learning_service: LearningService = Depends(get_learning_service),
+    conversations: MentorConversationRepository = Depends(get_mentor_conversation_repository),
+    provider: AIProvider = Depends(get_ai_provider),
+) -> MentorService:
+    return MentorService(
+        project_service,
+        blueprint_service,
+        learning_service,
+        conversations,
+        provider,
+        timeout_seconds=MENTOR_TIMEOUT_SECONDS,
     )

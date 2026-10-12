@@ -29,7 +29,12 @@ from app.services.project_service import (
     ProjectService,
     project_from_doc,
 )
-from tests.fakes import FakeActivityRepository, FakeLearningRepository, FakeProjectRepository
+from tests.fakes import (
+    FakeActivityRepository,
+    FakeBlueprintRepository,
+    FakeLearningRepository,
+    FakeProjectRepository,
+)
 
 USER = "user-a"
 CONTENT = {
@@ -83,7 +88,10 @@ class Harness:
         self.projects = FakeProjectRepository()
         self.learning = FakeLearningRepository()
         self.activity = FakeActivityRepository()
-        self.project_service = ProjectService(self.projects, self.learning, self.activity)
+        self.blueprints = FakeBlueprintRepository()
+        self.project_service = ProjectService(
+            self.projects, self.learning, self.activity, self.blueprints
+        )
         self.learning_service = LearningService(
             self.projects, self.learning, ActivityService(self.activity)
         )

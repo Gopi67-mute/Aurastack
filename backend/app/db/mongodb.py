@@ -33,6 +33,14 @@ async def connect_to_mongo() -> None:
     # (see activity_service.learning_activity_id), so this is what stops a
     # retried completion creating a second qualifying activity.
     await _state.db.activity_events.create_index([("user_id", 1), ("id", 1)], unique=True)
+    # One blueprint per project. Also what makes BlueprintRepository.claim
+    # atomic: a second concurrent first claim collides here.
+    await _state.db.project_blueprints.create_index([("project_id", 1)], unique=True)
+    # One mentor conversation per user and context (general or one project).
+    # Also what makes MentorConversationRepository.append_exchange idempotent.
+    await _state.db.mentor_conversations.create_index(
+        [("user_id", 1), ("context_key", 1)], unique=True
+    )
 
 
 async def close_mongo_connection() -> None:

@@ -1,0 +1,26 @@
+﻿services:
+  - type: web
+    name: aurastack-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB_NAME
+        value: aurastack
+      - key: CLERK_JWT_ISSUER
+        sync: false
+      - key: AI_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash-lite
+      - key: ENVIRONMENT
+        value: production
+
+      - key: JWT_AUDIENCE
+        sync: false
