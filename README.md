@@ -25,6 +25,20 @@ In the output, you'll find options to open the app in a
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
+## Backend: curriculum generation operations
+
+- **Generation runs in-process.** Each project's learning plan is generated in a FastAPI `BackgroundTask`. A backend restart, crash or `--reload` during generation loses that task, and nothing resumes it. The project keeps reading "generating" until its 120-second lease expires, then reads "failed", and the user can press **Try again**. The app keeps polling for 150 seconds, longer than the lease, so it picks up that "failed" state on its own.
+- **Logs.** The backend logs one `Generation claimed` line (`trigger=create` or `trigger=retry`) and one `Generation finished` line per attempt. These lines contain ids, provider, model, outcome and `duration_ms` only. They never include prompts, project text, provider responses or keys.
+- **Deploying over pre-Phase 3.3 data.** The legacy-status migration runs at startup. Retire every instance running older code before or as the new version starts: an old instance can keep writing legacy documents. Restarting the new version migrates any it wrote in the meantime.
+- **Live database checks (opt-in).** Run `MONGO_LIVE_TEST=1 pytest tests/test_mongo_generation_live.py` from `backend/`. The test uses a uniquely named temporary database and drops it afterwards. It never reads or writes application data.
+
+## Backend: project blueprint generation
+
+- **On demand, not automatic.** A project's blueprint (generated tech stack, architecture and roadmap) is generated only when a client calls `POST /api/v1/projects/{id}/blueprint/generation`, and only once the project's curriculum is ready. `GET /api/v1/projects/{id}/blueprint` reports `missing`, `generating`, `ready` or `failed`. Blueprints are stored in the `project_blueprints` collection, one per project. A blueprint failure never changes the project or its learning data.
+- **Configuration.** No new settings. Blueprints use the same `AI_PROVIDER`, `GEMINI_API_KEY`, `GEMINI_MODEL` and `AI_GENERATION_TIMEOUT_SECONDS` as curriculum generation, and the same 120-second lease. A lost run reads `failed` once its lease expires, and the client can POST again.
+- **Logs.** One `Blueprint generation claimed` and one `Blueprint generation finished` line per attempt, with ids, provider, model, outcome and `duration_ms` only.
+- **Live checks (opt-in).** From `backend/`: `MONGO_LIVE_TEST=1 pytest tests/test_mongo_blueprint_live.py` (temporary database, as above), and `GEMINI_LIVE_TEST=1 GEMINI_API_KEY=... pytest tests/test_gemini_live.py` for a real Gemini curriculum and blueprint.
+
 ## Get a fresh project
 
 When you're ready, run:

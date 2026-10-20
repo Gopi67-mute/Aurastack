@@ -1,16 +1,39 @@
 import "../global.css";
 
+import { ClerkProvider } from "@clerk/expo";
+import { tokenCache } from "@clerk/expo/token-cache";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { Pressable, Text, View } from "react-native";
 
-import { useAppBootstrap } from "../hooks/useAppBootstrap";
+import { AppDestinationProvider, useAppBootstrap } from "../hooks/useAppBootstrap";
 
 SplashScreen.preventAutoHideAsync();
 
+const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
+if (!publishableKey) {
+  throw new Error(
+    "Missing EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY. Add it to your .env file."
+  );
+}
+
 export default function RootLayout() {
-  const { status, error, retry } = useAppBootstrap();
+  return (
+    <ClerkProvider
+      publishableKey={publishableKey as string}
+      tokenCache={tokenCache}
+    >
+      <AppRoot />
+    </ClerkProvider>
+  );
+}
+
+// Split out from RootLayout so useAppBootstrap's useAuth() call runs inside
+// ClerkProvider, which must wrap it from above.
+function AppRoot() {
+  const { status, destination, error, retry } = useAppBootstrap();
 
   useEffect(() => {
     if (status !== "loading") {
@@ -47,5 +70,9 @@ export default function RootLayout() {
     );
   }
 
-  return <Stack />;
+  return (
+    <AppDestinationProvider value={destination}>
+      <Stack screenOptions={{ headerShown: false }} />
+    </AppDestinationProvider>
+  );
 }

@@ -1,4 +1,4 @@
-{
+﻿{
   "expo": {
     "name": "AuraStack01",
     "slug": "AuraStack01",
@@ -32,15 +32,26 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/aurastack-logo.png",
-          "imageWidth": 200,
+          "imageWidth": 400,
           "resizeMode": "contain",
           "backgroundColor": "#0B0F19"
         }
-      ]
+      ],
+      "@clerk/expo",
+      "expo-secure-store",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "8661d3c4-b1c1-4d2e-8dd7-0bb7215b94ba"
+      }
+    },
+    "owner": "aurastack-jd"
   }
 }
+

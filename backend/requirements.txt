@@ -1,0 +1,15 @@
+fastapi>=0.115.6
+uvicorn[standard]>=0.34.0
+motor>=3.6.1
+pydantic>=2.10.4
+pydantic-settings>=2.7.0
+PyJWT[crypto]>=2.10.1
+# IANA timezone database for `zoneinfo`. Required: Windows and slim Docker
+# images ship no system tz database, so streak calendar days cannot be
+# resolved without it.
+tzdata>=2025.1
+httpx>=0.28.1
+python-dotenv>=1.0.1
+# Official Gemini SDK (the older google-generativeai is deprecated). Capped
+# below the next major: its 1.x -> 2.x bump changed the client API.
+google-genai>=2.28.0,<3

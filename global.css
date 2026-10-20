@@ -24,6 +24,12 @@
   --color-error: #ef4444;
   --color-ai-accent: #a855f7;
 
+  /* Workspace section accents (see theme/colors.ts `section`) */
+  --color-section-tech: #60a5fa;
+  --color-section-roadmap: #fbbf24;
+  --color-section-architecture: #34d399;
+  --color-section-learning: #a78bfa;
+
   /* Neutrals */
   --color-n900: #05070d;
   --color-n800: #0b0f19;

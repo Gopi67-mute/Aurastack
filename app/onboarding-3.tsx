@@ -1,9 +1,11 @@
 import { Image } from "expo-image";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ArrowRight, Sparkles } from "lucide-react-native";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { setOnboardingCompleted } from "../lib/onboardingStorage";
 
 const TOTAL_STEPS = 3;
 
@@ -17,6 +19,17 @@ export default function Onboarding3({
   onGetStarted,
 }: Onboarding3Props) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+
+  async function handleGetStarted() {
+    await setOnboardingCompleted();
+
+    if (onGetStarted) {
+      onGetStarted();
+      return;
+    }
+    router.push("/sign-up");
+  }
 
   return (
     <>
@@ -52,17 +65,17 @@ export default function Onboarding3({
           </View>
 
           <Image
-            source={require("../assets/images/Aura-AI-Robot.png")}
+            source={require("../assets/images/3rd-screen.png")}
             style={{
-              width: "62%",
-              maxWidth: 260,
+              width: "96%",
+              maxWidth: 460,
               aspectRatio: 1,
-              marginTop: 6,
+              marginTop: 4,
             }}
             contentFit="contain"
           />
 
-          <View className="w-full flex-row items-center gap-4 rounded-xl border border-n700 bg-n800 p-4 mt-2">
+          <View className="w-full flex-row items-center gap-4 rounded-xl border border-n700 bg-n800 p-4 mt-1">
             <View className="w-12 h-12 rounded-md items-center justify-center bg-aura-purple/15">
               <Sparkles size={24} color="#7C3AED" strokeWidth={1.75} />
             </View>
@@ -89,7 +102,7 @@ export default function Onboarding3({
           </View>
 
           <Pressable
-            onPress={onGetStarted}
+            onPress={handleGetStarted}
             accessibilityRole="button"
             accessibilityLabel="Get Started"
             className="w-full flex-row items-center justify-center gap-2 rounded-xl bg-aura-purple py-4"

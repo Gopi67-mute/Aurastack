@@ -1,5 +1,8 @@
+import { useAuth, useClerk } from "@clerk/expo";
 import { useFonts } from "expo-font";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+
+import { getOnboardingCompleted } from "../lib/onboardingStorage";
 
 /**
  * Splash/init state machine for the app entry flow.
@@ -12,10 +15,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export type AppBootstrapStatus = "loading" | "ready" | "error";
 
 /**
- * Where the app should route to once bootstrap completes. Nothing currently
- * consumes this to navigate — onboarding/auth/home screens don't exist yet —
- * but the value is computed here so that wiring is a routing-only change
- * later, not a state-machine change.
+ * Where the app should route to once bootstrap completes. Consumed by
+ * app/index.tsx (via useAppDestination below) to redirect once — computing
+ * it here keeps the single useAppBootstrap() call owned by app/_layout.tsx,
+ * so index.tsx doesn't re-run font loading / the min-splash-duration timer.
  */
 export type AppDestination = "onboarding" | "auth" | "home";
 
@@ -32,23 +35,10 @@ const MIN_SPLASH_DURATION_MS = 1500;
 
 // Backstop only: if bootstrap hasn't resolved by this point, something is
 // hung. Surface the error fallback instead of leaving the splash stuck.
-const SAFETY_TIMEOUT_MS = 6000;
+export const SAFETY_TIMEOUT_MS = 6000;
 
-/**
- * Placeholder. Replace with a persisted onboarding flag (AsyncStorage /
- * SecureStore — pending approval) once the onboarding flow is built.
- */
-async function getOnboardingCompleted(): Promise<boolean> {
-  return false;
-}
-
-/**
- * Placeholder. Replace with Clerk's session check once authentication is
- * wired up.
- */
-async function getAuthSession(): Promise<{ isAuthenticated: boolean } | null> {
-  return null;
-}
+/** Startup work the safety-timeout log names when it is still unfinished. */
+export type BootstrapDependency = "fonts" | "clerk" | "onboarding-storage";
 
 function resolveDestination(
   onboardingCompleted: boolean,
@@ -66,6 +56,12 @@ export function useAppBootstrap(): AppBootstrapState {
     "Inter-SemiBold": require("../assets/fonts/Inter-SemiBold.ttf"),
     "Inter-Bold": require("../assets/fonts/Inter-Bold.ttf"),
   });
+  const { isLoaded: isAuthLoaded, isSignedIn } = useAuth();
+  // A failed Clerk load leaves `isLoaded` false for good, exactly like a slow
+  // one; only Clerk's own status ("loading" | "ready" | "degraded" | "error")
+  // tells them apart. Read for diagnostics only.
+  const { status: clerkStatus } = useClerk();
+  const clerkStatusRef = useRef(clerkStatus);
 
   const [status, setStatus] = useState<AppBootstrapStatus>("loading");
   const [destination, setDestination] = useState<AppDestination | null>(null);
@@ -74,6 +70,17 @@ export function useAppBootstrap(): AppBootstrapState {
 
   // Set once on mount so retries don't restart the minimum-duration clock.
   const startedAtRef = useRef(Date.now());
+  // Once the Stack has rendered, re-evaluating on a sign-in/sign-out must
+  // never swap it for the loading/error UI: that would unmount the whole
+  // navigator in the middle of an auth transition.
+  const hasBeenReadyRef = useRef(false);
+
+  useEffect(() => {
+    clerkStatusRef.current = clerkStatus;
+    if (clerkStatus === "error") {
+      console.error("[useAppBootstrap] Clerk failed to load (status: error)");
+    }
+  }, [clerkStatus]);
 
   const retry = useCallback(() => {
     startedAtRef.current = Date.now();
@@ -85,32 +92,43 @@ export function useAppBootstrap(): AppBootstrapState {
 
   useEffect(() => {
     let cancelled = false;
+    let isReadingOnboarding = false;
 
-    const safetyTimer = setTimeout(() => {
-      if (cancelled) return;
-      console.error("[useAppBootstrap] initialization exceeded safety timeout");
-      setError("Startup is taking longer than expected.");
-      setStatus("error");
-    }, SAFETY_TIMEOUT_MS);
+    // The splash backstop; there is no splash left to rescue once ready.
+    const safetyTimer = hasBeenReadyRef.current
+      ? undefined
+      : setTimeout(() => {
+          if (cancelled) return;
+          const pending: BootstrapDependency[] = [];
+          if (!fontsLoaded) pending.push("fonts");
+          if (!isAuthLoaded) pending.push("clerk");
+          if (isReadingOnboarding) pending.push("onboarding-storage");
+          console.error("[useAppBootstrap] initialization exceeded safety timeout", {
+            pending,
+            clerkStatus: clerkStatusRef.current,
+            attempt,
+          });
+          setError("Startup is taking longer than expected.");
+          setStatus("error");
+        }, SAFETY_TIMEOUT_MS);
 
     async function run() {
       try {
         if (fontError) {
           throw fontError;
         }
-        if (!fontsLoaded) {
-          // Effect re-runs once useFonts resolves (it's in the dep array).
+        if (!fontsLoaded || !isAuthLoaded) {
+          // Effect re-runs once useFonts/Clerk resolve (both in the dep array).
           return;
         }
 
-        const [onboardingCompleted, session] = await Promise.all([
-          getOnboardingCompleted(),
-          getAuthSession(),
-        ]);
+        isReadingOnboarding = true;
+        const onboardingCompleted = await getOnboardingCompleted();
+        isReadingOnboarding = false;
 
         const nextDestination = resolveDestination(
           onboardingCompleted,
-          !!session?.isAuthenticated
+          !!isSignedIn
         );
 
         const elapsed = Date.now() - startedAtRef.current;
@@ -121,12 +139,15 @@ export function useAppBootstrap(): AppBootstrapState {
 
         if (cancelled) return;
         clearTimeout(safetyTimer);
+        hasBeenReadyRef.current = true;
         setDestination(nextDestination);
         setStatus("ready");
       } catch (err) {
         if (cancelled) return;
         clearTimeout(safetyTimer);
         console.error("[useAppBootstrap] initialization failed", err);
+        // Keep the mounted navigator and its last destination.
+        if (hasBeenReadyRef.current) return;
         setError("We couldn't start AuraStack. Please try again.");
         setStatus("error");
       }
@@ -138,7 +159,22 @@ export function useAppBootstrap(): AppBootstrapState {
       cancelled = true;
       clearTimeout(safetyTimer);
     };
-  }, [fontsLoaded, fontError, attempt]);
+  }, [fontsLoaded, fontError, isAuthLoaded, isSignedIn, attempt]);
 
   return { status, destination, error, retry };
+}
+
+/**
+ * Carries the `destination` app/_layout.tsx resolves down to the routes it
+ * renders once bootstrap is "ready" — currently just app/index.tsx, which
+ * redirects on it. Wrap `<Stack />` with this in _layout so screens can read
+ * the destination without calling useAppBootstrap() (and its font loading /
+ * timers) a second time.
+ */
+const AppDestinationContext = createContext<AppDestination | null>(null);
+
+export const AppDestinationProvider = AppDestinationContext.Provider;
+
+export function useAppDestination(): AppDestination | null {
+  return useContext(AppDestinationContext);
 }
