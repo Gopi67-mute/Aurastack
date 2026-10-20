@@ -1,10 +1,10 @@
-{
+﻿{
   "expo": {
     "name": "AuraStack01",
     "slug": "AuraStack01",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/aurastack-logo.png",
+    "icon": "./assets/images/icon.png",
     "scheme": "aurastack01",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -54,3 +54,4 @@
     "owner": "aurastack-jd"
   }
 }
+
